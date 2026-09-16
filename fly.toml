@@ -1,0 +1,36 @@
+# Fly.io config — single always-on instance.
+#
+# Sessions are in-memory and the desktop→phone relay uses SSE over one process,
+# so this app MUST run as exactly one persistent machine: no scale-to-zero, no
+# autostop, no horizontal scaling. Runtime secrets (GEMINI_API_KEY,
+# GOOGLE_GENERATIVE_AI_API_KEY, APP_ACCESS_PASSWORD, AUTH_SECRET) are set with
+# `fly secrets set` — never committed here.
+
+app = "ai-interview-helper"
+primary_region = "iad"
+
+[build]
+
+[env]
+  PORT = "47317"
+  HOSTNAME = "0.0.0.0"
+  NODE_ENV = "production"
+
+[http_service]
+  internal_port = 47317
+  force_https = true
+  # Keep exactly one machine up at all times.
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+  # SSE is a long-lived streaming connection — do not buffer/limit concurrency low.
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 200
+    soft_limit = 150
+
+# Single machine, no autoscaling.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  cpus = 1
