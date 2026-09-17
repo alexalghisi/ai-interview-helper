@@ -19,12 +19,18 @@ import {
   AudioLines,
   Volume2,
   Eraser,
+  MonitorPlay,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  Repeat,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { QrCode } from "@/components/qr-code";
+import { AnswerFeed } from "@/components/answer-feed";
 import { STATUS_LABEL, type ServerEvent, type SessionStatus } from "@/lib/events";
 import {
   useAudioTranscription,
@@ -39,10 +45,7 @@ import {
 
 const VISION_INTERVAL_MS = 8000;
 
-function pickPhoneOrigin(
-  phoneOrigin: unknown,
-  browserOrigin: string,
-): string {
+function pickPhoneOrigin(phoneOrigin: unknown, browserOrigin: string): string {
   if (typeof phoneOrigin === "string") {
     try {
       const u = new URL(phoneOrigin);
@@ -68,6 +71,7 @@ export default function DesktopPage() {
 
   const [status, setStatus] = useState<SessionStatus>("idle");
   const [connectedPhones, setConnectedPhones] = useState(0);
+  const [connectedViewers, setConnectedViewers] = useState(0);
   const [questionHistory, setQuestionHistory] = useState<string[]>([]);
 
   const [manualQuestion, setManualQuestion] = useState("");
@@ -79,10 +83,13 @@ export default function DesktopPage() {
 
   const [capturing, setCapturing] = useState(false);
   const [captureError, setCaptureError] = useState<string | null>(null);
+  const [sourceLabel, setSourceLabel] = useState<string | null>(null);
   const [autoRead, setAutoRead] = useState(true);
   const [visionSupported, setVisionSupported] = useState<boolean | null>(null);
   const [visionNote, setVisionNote] = useState<string | null>(null);
   const [visionStatus, setVisionStatus] = useState<string | null>(null);
+
+  const [showAnswersHere, setShowAnswersHere] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -94,6 +101,7 @@ export default function DesktopPage() {
   const visionCooldownUntil = useRef(0);
 
   const phoneUrl = code && origin ? `${origin}/s/${code}` : "";
+  const viewerPath = code ? `/v/${code}` : "";
 
   /* ----------------------------- Session setup ---------------------------- */
   const startSession = useCallback(async () => {
@@ -121,7 +129,8 @@ export default function DesktopPage() {
     return () => window.clearTimeout(t);
   }, []);
 
-  // Subscribe to session events (status + phone count only — never the answer).
+  // Subscribe to session events. The server strips answer text for this role,
+  // so the shared screen can never leak it — questions and status only.
   useEffect(() => {
     if (!code) return;
     const es = new EventSource(`/api/session/${code}/stream?role=control`);
@@ -131,13 +140,16 @@ export default function DesktopPage() {
         if (event.type === "state") {
           setStatus(event.state.status);
           setConnectedPhones(event.state.connectedPhones);
-          setQuestionHistory(event.state.history.map((h) => h.question));
+          setConnectedViewers(event.state.connectedViewers);
+          setQuestionHistory(event.state.entries.map((e) => e.question));
         } else if (event.type === "phones") {
           setConnectedPhones(event.connectedPhones);
+          setConnectedViewers(event.connectedViewers);
         } else if (event.type === "status") {
           setStatus(event.status);
+        } else if (event.type === "answer_start") {
+          setQuestionHistory((h) => [event.entry.question, ...h].slice(0, 40));
         }
-        // Deliberately ignore `delta` / `answer_end` — answers stay off-screen.
       } catch {
         /* ignore malformed */
       }
@@ -250,13 +262,18 @@ export default function DesktopPage() {
   );
 
   /* ---------------------------- Screen capture ---------------------------- */
-  const stopCapture = useCallback(() => {
+  const releaseStream = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
+  }, []);
+
+  const stopCapture = useCallback(() => {
+    releaseStream();
     setCapturing(false);
+    setSourceLabel(null);
     stopAudio();
-  }, [stopAudio]);
+  }, [releaseStream, stopAudio]);
 
   const startCapture = useCallback(async () => {
     setCaptureError(null);
@@ -281,7 +298,15 @@ export default function DesktopPage() {
         selfBrowserSurface: "exclude",
         monitorTypeSurfaces: "include",
       } as DisplayMediaStreamOptions);
+
+      // Only drop the previous capture once the new pick succeeded, so a
+      // cancelled picker leaves the running share alone.
+      releaseStream();
       streamRef.current = stream;
+
+      const videoTrack = stream.getVideoTracks()[0];
+      setSourceLabel(videoTrack?.label || "Selected window");
+
       const video = videoRef.current;
       if (video) {
         video.srcObject = stream;
@@ -302,7 +327,7 @@ export default function DesktopPage() {
           });
         }
       }
-      stream.getVideoTracks()[0]?.addEventListener("ended", stopCapture);
+      videoTrack?.addEventListener("ended", stopCapture);
       lastFrameSig.current = "";
       lastVisionQuestion.current = "";
       setCapturing(true);
@@ -318,16 +343,15 @@ export default function DesktopPage() {
       const name = e instanceof DOMException ? e.name : "";
       if (name === "NotAllowedError") {
         setCaptureError(
-          "Screen capture was denied. Click “Share screen”, pick the interview window (Zoom/Meet/docs — not this helper), and allow access.",
+          "Screen capture was denied or cancelled. Click “Share screen”, pick the interview window (Zoom/Meet/docs — not this helper), and allow access.",
         );
       } else {
         setCaptureError(
           "Couldn't start screen capture. You can still type questions manually.",
         );
       }
-      setCapturing(false);
     }
-  }, [startWithStream, stopCapture]);
+  }, [releaseStream, startWithStream, stopCapture]);
 
   const grabFrame = useCallback((): { dataUrl: string; sig: string } | null => {
     const video = videoRef.current;
@@ -366,7 +390,7 @@ export default function DesktopPage() {
   const runVision = useCallback(
     async (auto: boolean) => {
       if (!code) return;
-      if (generatingRef.current || visionBusy.current) return;
+      if (visionBusy.current) return;
       if (auto && Date.now() < visionCooldownUntil.current) return;
       const frame = grabFrame();
       if (!frame) {
@@ -468,11 +492,19 @@ export default function DesktopPage() {
     }
   }, [phoneUrl]);
 
+  const openViewerWindow = useCallback(() => {
+    if (!viewerPath) return;
+    window.open(
+      viewerPath,
+      `aih-answers-${code}`,
+      "popup=yes,width=520,height=900,noopener",
+    );
+  }, [viewerPath, code]);
+
   const live = status === "streaming" || generating;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-12">
-      {/* Header */}
       <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <div className="grid h-11 w-11 place-items-center rounded-xl bg-primary/15 ring-1 ring-primary/30">
@@ -483,14 +515,15 @@ export default function DesktopPage() {
               AI Interview HelpER
             </h1>
             <p className="text-sm text-muted-foreground">
-              Desktop control · answers stream only to your phone
+              Laptop control · answers stream to your phone and to a separate
+              browser window
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <Badge variant="muted">
             <ShieldCheck className="h-3.5 w-3.5" />
-            Answers never shown here
+            Nothing is answered on this page
           </Badge>
         </div>
       </header>
@@ -523,7 +556,7 @@ export default function DesktopPage() {
                 <div className="mb-4 flex items-center justify-between">
                   <div className="flex items-center gap-2 text-sm font-medium">
                     <Monitor className="h-4 w-4 text-accent" />
-                    Screen capture
+                    Window capture
                   </div>
                   <StatusPill status={status} live={live} />
                 </div>
@@ -543,9 +576,10 @@ export default function DesktopPage() {
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center">
                       <Monitor className="h-10 w-10 text-muted-foreground" />
                       <p className="max-w-xs text-sm text-muted-foreground">
-                        Share the interview window where the question is written.
-                        We read it, listen if you share tab audio, and send the
-                        answer only to your phone.
+                        Pick the exact window, tab or screen you want watched.
+                        We read the question off it, listen if the share carries
+                        audio, and send answers only to your phone / answer
+                        window.
                       </p>
                     </div>
                   )}
@@ -558,6 +592,12 @@ export default function DesktopPage() {
                     </div>
                   )}
                 </div>
+
+                {capturing && sourceLabel && (
+                  <p className="mt-2 truncate text-xs text-muted-foreground">
+                    Source: <span className="text-foreground">{sourceLabel}</span>
+                  </p>
+                )}
 
                 {captureError && (
                   <div className="mt-3 flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
@@ -573,10 +613,16 @@ export default function DesktopPage() {
                       Share screen
                     </Button>
                   ) : (
-                    <Button onClick={stopCapture} variant="secondary">
-                      <Square className="h-4 w-4" />
-                      Stop sharing
-                    </Button>
+                    <>
+                      <Button onClick={startCapture} variant="accent">
+                        <Repeat className="h-4 w-4" />
+                        Change window
+                      </Button>
+                      <Button onClick={stopCapture} variant="secondary">
+                        <Square className="h-4 w-4" />
+                        Stop sharing
+                      </Button>
+                    </>
                   )}
                   <Button
                     onClick={() => runVision(false)}
@@ -688,7 +734,7 @@ export default function DesktopPage() {
 
                 <p className="mt-2 text-xs text-muted-foreground">
                   {audioSource === "display"
-                    ? "Pick the interview browser tab and enable “Share tab audio”. Detected questions auto-generate an answer to your phone."
+                    ? "Pick the interview browser tab and enable “Share tab audio”. Detected questions auto-generate an answer."
                     : "Uses your microphone — best if the interviewer plays aloud on speakers."}
                 </p>
 
@@ -731,7 +777,7 @@ export default function DesktopPage() {
                         Listening for speech…
                       </span>
                     ) : (
-                      "Transcript of the interviewer's speech appears here (stays on this device — only the answer goes to the phone)."
+                      "Transcript of the interviewer's speech appears here (stays on this device — only the answer goes to the answer views)."
                     )}
                   </div>
                 </div>
@@ -758,10 +804,7 @@ export default function DesktopPage() {
                     <p className="text-xs text-muted-foreground">
                       ⌘/Ctrl + Enter to send
                     </p>
-                    <Button
-                      type="submit"
-                      disabled={!manualQuestion.trim() || generating}
-                    >
+                    <Button type="submit" disabled={!manualQuestion.trim()}>
                       {generating ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
@@ -775,7 +818,7 @@ export default function DesktopPage() {
                 {currentQuestion && (
                   <div className="mt-4 rounded-lg border border-border bg-muted/30 p-3">
                     <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      Sent to phone
+                      Last question sent
                     </p>
                     <p className="mt-1 text-sm">{currentQuestion}</p>
                   </div>
@@ -793,7 +836,7 @@ export default function DesktopPage() {
                   <ul className="flex flex-col gap-2">
                     {questionHistory.slice(0, 6).map((q, i) => (
                       <li
-                        key={i}
+                        key={`${i}-${q.slice(0, 24)}`}
                         className="truncate rounded-lg border border-border bg-muted/20 px-3 py-2 text-sm text-muted-foreground"
                       >
                         {q}
@@ -805,7 +848,7 @@ export default function DesktopPage() {
             )}
           </div>
 
-          {/* Right column: pairing */}
+          {/* Right column: where the answers go */}
           <div className="flex flex-col gap-6">
             <Card>
               <CardContent className="flex flex-col items-center gap-5 pt-6 text-center">
@@ -836,19 +879,87 @@ export default function DesktopPage() {
                     </Button>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span
-                    className={cn(
-                      "inline-block h-2 w-2 rounded-full",
-                      connectedPhones > 0
-                        ? "bg-success pulse-dot"
-                        : "bg-muted-foreground/40",
-                    )}
-                  />
-                  {connectedPhones > 0
-                    ? `${connectedPhones} phone${connectedPhones > 1 ? "s" : ""} connected`
-                    : "Waiting for your phone…"}
+                <div className="flex flex-col items-center gap-1 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        "inline-block h-2 w-2 rounded-full",
+                        connectedPhones > 0
+                          ? "bg-success pulse-dot"
+                          : "bg-muted-foreground/40",
+                      )}
+                    />
+                    {connectedPhones > 0
+                      ? `${connectedPhones} phone${connectedPhones > 1 ? "s" : ""} connected`
+                      : "Waiting for your phone…"}
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        "inline-block h-2 w-2 rounded-full",
+                        connectedViewers > 0
+                          ? "bg-success pulse-dot"
+                          : "bg-muted-foreground/40",
+                      )}
+                    />
+                    {connectedViewers > 0
+                      ? `${connectedViewers} browser window${connectedViewers > 1 ? "s" : ""} connected`
+                      : "No browser answer window open"}
+                  </span>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Browser answer window */}
+            <Card>
+              <CardContent className="pt-6">
+                <div className="mb-3 flex items-center gap-2 text-sm font-medium">
+                  <MonitorPlay className="h-4 w-4 text-accent" />
+                  Answers in this browser
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Open the answer window on a second monitor or any window you
+                  are <span className="text-foreground">not</span> sharing. It
+                  shows the same live feed as the phone.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button onClick={openViewerWindow} variant="accent">
+                    <ExternalLink className="h-4 w-4" />
+                    Open answer window
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowAnswersHere((v) => !v)}
+                  >
+                    {showAnswersHere ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                    {showAnswersHere ? "Hide here" : "Show on this page"}
+                  </Button>
+                </div>
+                {showAnswersHere ? (
+                  <>
+                    <p className="mt-3 flex items-start gap-2 text-xs text-destructive">
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      Answers are visible on this page now — don&apos;t share
+                      this screen while it&apos;s on.
+                    </p>
+                    {code && (
+                      <AnswerFeed
+                        code={code}
+                        role="viewer"
+                        embedded
+                        className="mt-3"
+                      />
+                    )}
+                  </>
+                ) : (
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    This page stays answer-free, so it is safe to screen-share.
+                  </p>
+                )}
               </CardContent>
             </Card>
 
@@ -858,13 +969,13 @@ export default function DesktopPage() {
                   <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-success" />
                   <div className="text-sm text-muted-foreground">
                     <p className="font-medium text-foreground">
-                      Safe to screen-share
+                      Answers wait for you
                     </p>
                     <p className="mt-1">
-                      Generated answers are streamed{" "}
-                      <span className="text-foreground">only to your phone</span>
-                      . This desktop view shows the question and status, never
-                      the answer — so a shared screen never reveals the help.
+                      Every question gets its own card. A new question is added
+                      below the one you&apos;re reading — it never replaces it —
+                      and scrolling up pauses auto-follow until you tap{" "}
+                      <span className="text-foreground">Jump to latest</span>.
                     </p>
                   </div>
                 </div>
@@ -897,9 +1008,9 @@ function StartPanel({
             Start a live session
           </h2>
           <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-            You&apos;ll get a QR code and pairing code to open the answer view on
-            your phone. Share your interview screen, and answers stream live to
-            your phone — never onto the screen you share.
+            You&apos;ll get a QR code for your phone and a one-click answer
+            window for this browser. Pick the window to watch, and answers
+            stream to both — never onto the screen you share.
           </p>
         </div>
         <Button size="lg" onClick={onStart} disabled={creating}>
@@ -912,9 +1023,9 @@ function StartPanel({
         </Button>
         {error && <p className="text-sm text-destructive">{error}</p>}
         <ol className="grid w-full max-w-md gap-3 text-left text-sm text-muted-foreground sm:grid-cols-3">
-          <Step n={1} label="Pair your phone with the QR code" />
-          <Step n={2} label="Allow the mic — spoken questions answer on your phone" />
-          <Step n={3} label="Read answers on your phone" />
+          <Step n={1} label="Pair your phone, or open the browser answer window" />
+          <Step n={2} label="Share the window to watch — typed or spoken questions" />
+          <Step n={3} label="Read each answer at your pace, one card per question" />
         </ol>
       </CardContent>
     </Card>
@@ -932,13 +1043,7 @@ function Step({ n, label }: { n: number; label: string }) {
   );
 }
 
-function StatusPill({
-  status,
-  live,
-}: {
-  status: SessionStatus;
-  live: boolean;
-}) {
+function StatusPill({ status, live }: { status: SessionStatus; live: boolean }) {
   const variant =
     status === "error"
       ? "destructive"
