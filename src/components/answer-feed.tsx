@@ -286,7 +286,7 @@ export function AnswerFeed({
     if (el) {
       el.scrollTo({ top: el.scrollHeight, behavior });
     } else {
-      bottomRef.current?.scrollIntoView({ behavior, block: "end" });
+      window.scrollTo({ top: document.documentElement.scrollHeight, behavior });
     }
   }, []);
 
@@ -439,7 +439,7 @@ export function AnswerFeed({
             <AnswerCard
               key={entry.id}
               entry={entry}
-              index={entries.length - i}
+              index={i + 1}
               textSize={textSize}
               latest={i === entries.length - 1}
             />
@@ -454,7 +454,11 @@ export function AnswerFeed({
     <button
       type="button"
       onClick={jumpToLatest}
-      className="absolute bottom-4 left-1/2 z-30 inline-flex -translate-x-1/2 items-center gap-2 rounded-full border border-accent/50 bg-accent px-4 py-2 text-xs font-semibold text-accent-foreground shadow-lg"
+      className={cn(
+        "left-1/2 z-40 inline-flex -translate-x-1/2 items-center gap-2 rounded-full border border-accent/50 bg-accent px-4 py-2 text-xs font-semibold text-accent-foreground shadow-lg",
+        // Fixed on a full page so it stays reachable however far you scrolled.
+        embedded ? "absolute bottom-4" : "fixed bottom-6",
+      )}
     >
       <ArrowDown className="h-3.5 w-3.5" />
       {unread > 0

@@ -37,7 +37,7 @@ import {
   type AudioSource,
 } from "@/hooks/use-audio-transcription";
 import { cn } from "@/lib/utils";
-import { normalizeQuestion } from "@/lib/detect-question";
+import { isSameQuestion } from "@/lib/detect-question";
 import {
   INSECURE_MEDIA_MESSAGE,
   isInsecureMediaContext,
@@ -64,10 +64,13 @@ function pickPhoneOrigin(phoneOrigin: unknown, browserOrigin: string): string {
   return browserOrigin;
 }
 
+type PhoneOriginOption = { label: string; value: string; hint: string };
+
 export default function DesktopPage() {
   const [code, setCode] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [origin, setOrigin] = useState("");
+  const [originOptions, setOriginOptions] = useState<PhoneOriginOption[]>([]);
 
   const [status, setStatus] = useState<SessionStatus>("idle");
   const [connectedPhones, setConnectedPhones] = useState(0);
@@ -112,6 +115,10 @@ export default function DesktopPage() {
       if (!res.ok) throw new Error("Could not start a session");
       const data = await res.json();
       const browserOrigin = window.location.origin;
+      const options: PhoneOriginOption[] = Array.isArray(data.phoneOrigins)
+        ? data.phoneOrigins
+        : [];
+      setOriginOptions(options);
       setOrigin(pickPhoneOrigin(data.phoneOrigin, browserOrigin));
       setCode(data.code);
       return data.code as string;
@@ -441,7 +448,7 @@ export default function DesktopPage() {
         setVisionStatus(`Saw: ${q}`);
         if (
           lastVisionQuestion.current &&
-          normalizeQuestion(q) === normalizeQuestion(lastVisionQuestion.current)
+          isSameQuestion(q, lastVisionQuestion.current)
         ) {
           return;
         }
@@ -865,6 +872,36 @@ export default function DesktopPage() {
                     {code}
                   </p>
                 </div>
+                {originOptions.length > 1 && (
+                  <div className="w-full">
+                    <p className="mb-1.5 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                      Phone link
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {originOptions.map((opt) => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          title={opt.hint}
+                          onClick={() => setOrigin(opt.value)}
+                          className={cn(
+                            "rounded-full border px-3 py-1 text-xs font-medium transition",
+                            origin === opt.value
+                              ? "border-accent/50 bg-accent/15 text-accent"
+                              : "border-border text-muted-foreground hover:bg-muted/50",
+                          )}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="mt-1.5 text-left text-[11px] text-muted-foreground">
+                      If the QR doesn&apos;t load on the phone, switch to{" "}
+                      <span className="text-foreground">Wi-Fi</span> (same
+                      network) — a public tunnel link dies with the tunnel.
+                    </p>
+                  </div>
+                )}
                 <div className="w-full">
                   <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 p-2">
                     <span className="flex-1 break-all text-left text-xs text-muted-foreground">
