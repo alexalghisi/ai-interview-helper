@@ -1,49 +1,73 @@
 # AI Interview HelpER
 
-A real-time interview assistant. On your **laptop** you capture your interview
-screen and/or **listen to the interview audio**; questions are transcribed from
+A real-time interview assistant. On your **laptop** you pick the exact window to
+watch and/or **listen to the interview audio**; questions are transcribed from
 speech, read by a vision model, **or** typed manually; and answers are generated
-in a specific persona and **streamed live to your phone** — never onto the
-screen you share. An interviewer watching your screen-share never sees the help.
+in a specific persona and **streamed live to your phone and to a separate
+browser window** — never onto the screen you share. An interviewer watching your
+screen-share never sees the help.
 
-> Desktop capture + phone pairing (QR + code); manual, vision, and **live-audio**
-> question capture; auto-answer on detected spoken questions; live streaming
-> answers with recent Q&A history.
+> Window capture + phone pairing (QR + code); manual, vision, and **live-audio**
+> question capture; auto-answer on detected spoken questions; an append-only
+> answer feed you read at your own pace.
 
 ## How it works
 
 ```
- Desktop (/)                          Phone (/s/[code])
- ────────────                         ──────────────────
- • Start session → QR + code          • Scan QR / open link
- • Share screen (getDisplayMedia)     • See the current question
- • Read question (vision) or type     • Read the LIVE streaming answer
- • Trigger answer  ───── SSE relay ─▶ • Browse recent Q&A history
-   (answer never shown on desktop)
+ Laptop control (/)                   Answer views (/s/[code] phone, /v/[code] browser)
+ ──────────────────                   ────────────────────────────────────────────────
+ • Start session → QR + code          • Scan QR / open the answer window
+ • Pick the window to watch           • One card per question, oldest → newest
+ • Read question (vision), hear it,   • Read the LIVE streaming answer
+   or type it                         • New answers append BELOW — nothing is replaced
+ • Trigger answer  ─── SSE relay ──▶  • Scroll up to read → the feed holds still
+   (answer never shown on the         • "Jump to latest" when you're ready
+    control page)
 ```
 
-- **Desktop control view** shows the capture preview, question input, pairing
-  QR/code and session status — **but never the answer**, so it's safe to
-  screen-share.
-- **Phone view** is a mobile-first surface that shows the current question and
-  the answer as it streams in, token by token, plus recent history.
-- A desktop→phone **realtime relay** is implemented with Server-Sent Events over
-  an in-memory session store (`src/lib/session-store.ts`).
+- **Control view** shows the capture preview, question input, pairing QR/code
+  and session status — **but never the answer**, so it's safe to screen-share.
+  The server strips answer text for this role; it isn't just hidden in the UI.
+- **Answer views** (phone and browser) are the same component and receive the
+  same live stream. Open the browser one on a second monitor, or reveal it
+  inline on the control page when you are *not* sharing.
+- A **realtime relay** over Server-Sent Events on an in-memory session store
+  (`src/lib/session-store.ts`), mirrored to disk so a restart doesn't orphan the
+  QR code.
+
+## Reading at your own pace
+
+The thing an interview assistant must never do is yank the answer away while
+you're mid-sentence. So:
+
+- **Every question gets its own card.** A new question *appends* — it never
+  overwrites the answer you're reading, and several answers can stream at once.
+- **Scrolling up pauses auto-follow.** The feed freezes where you left it and a
+  **"N new answers"** pill appears; tap it (or **Follow**) to catch up.
+- **Hold** pins the view explicitly, for when you're at the bottom and want to
+  stay there.
+- The last **40** Q&A cards stay in the feed, and a phone that joins (or
+  reconnects) late is handed the whole backlog.
+- Text size is adjustable and remembered per device.
 
 ## Question capture modes
 
 Three ways to feed the interviewer's question in — use any combination:
 
 1. **Listen (audio)** — capture the interview audio, transcribe it live with
-   Gemini, detect spoken questions, and auto-generate an answer to your phone.
-   Pick the source: **Tab / system** audio (via `getDisplayMedia` — choose the
-   interview browser tab and tick **"Share tab audio"**) or your **microphone**.
-   A rolling transcript shows on the desktop; the **answer still only goes to
-   the phone**. Toggle **Auto-answer** off to review/edit the detected question
-   before sending.
-2. **Read screen (vision)** — grab a frame and let Gemini read the on-screen
-   question (manual "Read question now" or Auto-read on an interval).
+   Gemini, detect spoken questions, and auto-generate an answer. Pick the
+   source: **Tab / system** audio (via `getDisplayMedia` — choose the interview
+   browser tab and tick **"Share tab audio"**) or your **microphone**. A rolling
+   transcript shows on the control page; the **answer still only goes to the
+   answer views**. Toggle **Auto-answer** off to review/edit the detected
+   question before sending. Near-identical repeats of a question (the rolling
+   transcript re-emits it as more words arrive) collapse into one answer.
+2. **Read window (vision)** — grab a frame from the window you picked and let
+   Gemini read the on-screen question ("Read question now", or Auto-read on an
+   8s interval). **Change window** re-opens the picker without dropping the
+   current share if you cancel.
 3. **Manual** — type or paste the question. Always available, always reliable.
+   You can send a new question while the previous answer is still streaming.
 
 ### Audio capture constraints (read this)
 
@@ -87,9 +111,9 @@ in `src/lib/persona.ts`.
 ## Access gate (privacy)
 
 Once the app is reachable on a network you'll want it private. Set a single
-shared password and the whole app — the desktop control view, the phone view
-`/s/[code]`, and every API route (including the SSE stream) — sits behind a
-login:
+shared password and the whole app — the control view, the answer views
+`/s/[code]` and `/v/[code]`, and every API route (including the SSE stream) —
+sits behind a login:
 
 ```bash
 APP_ACCESS_PASSWORD="something-only-you-know"
@@ -114,11 +138,29 @@ npm run dev
 ```
 
 Then open **http://localhost:47317** on your laptop. Click **Start session**,
-share your screen, and scan the QR code with your phone (or open the phone URL).
-To test on a real phone, make sure it's on the same network and use your
-machine's LAN IP, e.g. `http://192.168.x.x:47317/s/CODE`.
+pick the window to watch, and either scan the QR with your phone or click
+**Open answer window** for a browser-only setup.
+
+The **Phone link** chips under the QR switch between every origin the phone
+could use — the configured public/tunnel origin, the host you opened, and your
+**Wi-Fi** LAN address (e.g. `http://192.168.x.x:47317/s/CODE`). If the QR won't
+load on the phone, switch to Wi-Fi: a tunnel link stops working the moment the
+tunnel drops, while the LAN address keeps working on the same network.
 
 The dev server binds to port **47317** (uncommon, to avoid conflicts).
+
+### Verify the relay end to end
+
+```bash
+npm run build && npm start        # in one terminal
+npm run test:smoke                # in another
+```
+
+`scripts/smoke.mjs` (zero dependencies) creates a session, attaches a phone, a
+browser window and a control subscriber, fires two overlapping questions, and
+asserts that both answers arrive in full on both views, that neither replaces
+the other, that the control role receives no answer text, and that a late
+joiner gets the whole backlog.
 
 > **Sharing the app over a proxy / tunnel / hosted preview?** Run the
 > **production** build, not `npm run dev`:
@@ -145,6 +187,7 @@ The dev server binds to port **47317** (uncommon, to avoid conflicts).
 | `ANSWER_MAX_TOKENS` | Max answer tokens (latency cap) | `512` |
 | `APP_ACCESS_PASSWORD` | Shared login password (gates the whole app) | none → open |
 | `AUTH_SECRET` | Secret used to sign the session cookie | derived from password |
+| `PHONE_PUBLIC_ORIGIN` | Public origin offered as the **Public** phone link | none → LAN/host only |
 
 ## Deploy to Fly.io (single always-on instance)
 
@@ -199,29 +242,34 @@ Notes:
 src/
   middleware.ts                  Access gate (redirect/401 when locked)
   app/
-    page.tsx                     Desktop control view
+    page.tsx                     Laptop control view (never renders answers)
     login/page.tsx               Password login screen
-    s/[code]/page.tsx            Mobile phone answer view
+    s/[code]/page.tsx            Phone answer view
+    v/[code]/page.tsx            Browser answer window
     api/
       login/route.ts             Check password, set signed cookie
-      session/route.ts           Create a session
+      session/route.ts           Create a session (+ phone link options)
       session/[code]/route.ts    Fetch public session state
-      session/[code]/stream/...  SSE relay (phone subscribes here)
-      answer/route.ts            Generate + stream answer to the phone
+      session/[code]/stream/...  SSE relay (answer views subscribe here)
+      answer/route.ts            Generate + stream one answer entry
       vision/route.ts            Read the question off a screenshot
       transcribe/route.ts        Transcribe an audio chunk (Gemini audio)
   hooks/
     use-audio-transcription.ts   Capture + chunk + transcribe + detect question
   lib/
     auth.ts                      Signed-cookie access gate helpers
-    session-store.ts             In-memory sessions + broadcast
+    session-store.ts             Append-only Q&A entries + SSE broadcast
+    network.ts                   Phone link origins (public / host / LAN)
     generate.ts                  Gemini + mock answer/vision/transcribe engine
     persona.ts                   Persona + vision + transcribe system prompts
-    detect-question.ts           Heuristic spoken-question detection
+    detect-question.ts           Question detection + near-duplicate collapsing
     events.ts                    Shared client-safe types
   components/
+    answer-feed.tsx              The answer feed (phone, browser, inline)
     qr-code.tsx                  QR renderer
     ui/                          Button, Card, Textarea, Badge
+scripts/
+  smoke.mjs                      End-to-end relay test (no dependencies)
 ```
 
 ## Deploy files
@@ -235,6 +283,6 @@ next.config.ts    output: "standalone"
 
 ## Notes & scope
 
-- Sessions are **in-memory** — they reset when the dev server restarts.
-- Deliberately deferred for v1: audio/speech-to-text of the interviewer,
-  accounts/persistence, multiple personas, and native packaging.
+- Sessions live in memory and are mirrored to `.data/sessions.json`, so a
+  restart keeps the pairing code and the last 40 Q&A cards alive.
+- Deliberately deferred: accounts, multiple personas, and native packaging.
