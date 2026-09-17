@@ -15,21 +15,51 @@ import {
   AlertTriangle,
   Sparkles,
   RadioTower,
+  Mic,
+  AudioLines,
+  Volume2,
+  Eraser,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { QrCode } from "@/components/qr-code";
+import { STATUS_LABEL, type ServerEvent, type SessionStatus } from "@/lib/events";
 import {
-  STATUS_LABEL,
-  type QAEntry,
-  type ServerEvent,
-  type SessionStatus,
-} from "@/lib/events";
+  useAudioTranscription,
+  type AudioSource,
+} from "@/hooks/use-audio-transcription";
 import { cn } from "@/lib/utils";
+import { normalizeQuestion } from "@/lib/detect-question";
+import {
+  INSECURE_MEDIA_MESSAGE,
+  isInsecureMediaContext,
+} from "@/lib/secure-media";
 
-const VISION_INTERVAL_MS = 6000;
+const VISION_INTERVAL_MS = 8000;
+
+function pickPhoneOrigin(
+  phoneOrigin: unknown,
+  browserOrigin: string,
+): string {
+  if (typeof phoneOrigin === "string") {
+    try {
+      const u = new URL(phoneOrigin);
+      if (
+        u.hostname &&
+        u.hostname !== "0.0.0.0" &&
+        u.hostname !== "localhost" &&
+        u.hostname !== "127.0.0.1"
+      ) {
+        return phoneOrigin.replace(/\/$/, "");
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return browserOrigin;
+}
 
 export default function DesktopPage() {
   const [code, setCode] = useState<string | null>(null);
@@ -38,24 +68,30 @@ export default function DesktopPage() {
 
   const [status, setStatus] = useState<SessionStatus>("idle");
   const [connectedPhones, setConnectedPhones] = useState(0);
-  const [questionHistory, setQuestionHistory] = useState<QAEntry[]>([]);
+  const [questionHistory, setQuestionHistory] = useState<string[]>([]);
 
   const [manualQuestion, setManualQuestion] = useState("");
   const [currentQuestion, setCurrentQuestion] = useState("");
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [insecureMedia, setInsecureMedia] = useState(false);
 
   const [capturing, setCapturing] = useState(false);
   const [captureError, setCaptureError] = useState<string | null>(null);
-  const [autoRead, setAutoRead] = useState(false);
+  const [autoRead, setAutoRead] = useState(true);
   const [visionSupported, setVisionSupported] = useState<boolean | null>(null);
   const [visionNote, setVisionNote] = useState<string | null>(null);
+  const [visionStatus, setVisionStatus] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const videoTrackRef = useRef<MediaStreamTrack | null>(null);
   const lastVisionQuestion = useRef<string>("");
+  const lastFrameSig = useRef<string>("");
+  const lastFrameAt = useRef(0);
+  const visionBusy = useRef(false);
+  const generatingRef = useRef(false);
+  const visionCooldownUntil = useRef(0);
 
   const phoneUrl = code && origin ? `${origin}/s/${code}` : "";
 
@@ -63,12 +99,14 @@ export default function DesktopPage() {
   const startSession = useCallback(async () => {
     setCreating(true);
     setError(null);
-    setOrigin(window.location.origin);
     try {
       const res = await fetch("/api/session", { method: "POST" });
       if (!res.ok) throw new Error("Could not start a session");
       const data = await res.json();
+      const browserOrigin = window.location.origin;
+      setOrigin(pickPhoneOrigin(data.phoneOrigin, browserOrigin));
       setCode(data.code);
+      return data.code as string;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to start session");
     } finally {
@@ -76,17 +114,26 @@ export default function DesktopPage() {
     }
   }, []);
 
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      setInsecureMedia(isInsecureMediaContext());
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, []);
+
   // Subscribe to session events (status + phone count only — never the answer).
   useEffect(() => {
     if (!code) return;
-    const es = new EventSource(`/api/session/${code}/stream`);
+    const es = new EventSource(`/api/session/${code}/stream?role=control`);
     es.onmessage = (ev) => {
       try {
         const event = JSON.parse(ev.data) as ServerEvent;
         if (event.type === "state") {
           setStatus(event.state.status);
           setConnectedPhones(event.state.connectedPhones);
-          setQuestionHistory(event.state.history);
+          setQuestionHistory(event.state.history.map((h) => h.question));
+        } else if (event.type === "phones") {
+          setConnectedPhones(event.connectedPhones);
         } else if (event.type === "status") {
           setStatus(event.status);
         }
@@ -98,12 +145,34 @@ export default function DesktopPage() {
     return () => es.close();
   }, [code]);
 
+  useEffect(() => {
+    if (!code) return;
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const r = await fetch(`/api/session/${code}`, { cache: "no-store" });
+        if (!cancelled && r.status === 404) {
+          await startSession();
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    void check();
+    const id = window.setInterval(check, 2500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [code, startSession]);
+
   /* ------------------------------ Answer flow ----------------------------- */
   const generate = useCallback(
     async (question: string) => {
       const q = question.trim();
       if (!code || !q) return;
       setCurrentQuestion(q);
+      generatingRef.current = true;
       setGenerating(true);
       setError(null);
       try {
@@ -119,11 +188,56 @@ export default function DesktopPage() {
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to generate answer");
       } finally {
+        generatingRef.current = false;
         setGenerating(false);
       }
     },
     [code],
   );
+
+  /* ------------------------------ Audio flow ------------------------------ */
+  const [audioAutoAnswer, setAudioAutoAnswer] = useState(true);
+  const [audioSource, setAudioSource] = useState<AudioSource>("mic");
+  const audioAutoAnswerRef = useRef(audioAutoAnswer);
+  useEffect(() => {
+    audioAutoAnswerRef.current = audioAutoAnswer;
+  }, [audioAutoAnswer]);
+
+  const handleDetectedQuestion = useCallback(
+    (q: string) => {
+      setManualQuestion(q);
+      if (audioAutoAnswerRef.current) generate(q);
+    },
+    [generate],
+  );
+
+  const audio = useAudioTranscription({
+    code,
+    onQuestion: handleDetectedQuestion,
+  });
+  const {
+    listening,
+    start: startAudio,
+    stop: stopAudio,
+    startWithStream,
+    error: audioError,
+    transcript: audioTranscript,
+    supported: audioSupported,
+    clearTranscript,
+  } = audio;
+
+  const handleStart = useCallback(async () => {
+    const sessionCode = await startSession();
+    if (sessionCode) await startAudio("mic", sessionCode);
+  }, [startAudio, startSession]);
+
+  const toggleListening = useCallback(async () => {
+    if (listening) {
+      stopAudio();
+    } else {
+      await startAudio(audioSource);
+    }
+  }, [listening, startAudio, stopAudio, audioSource]);
 
   const submitManual = useCallback(
     (e?: React.FormEvent) => {
@@ -137,45 +251,74 @@ export default function DesktopPage() {
 
   /* ---------------------------- Screen capture ---------------------------- */
   const stopCapture = useCallback(() => {
-    const track = videoTrackRef.current;
-    if (track) {
-      track.removeEventListener("ended", stopCapture);
-      videoTrackRef.current = null;
-    }
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
     setCapturing(false);
-    setAutoRead(false);
-  }, []);
+    stopAudio();
+  }, [stopAudio]);
 
   const startCapture = useCallback(async () => {
     setCaptureError(null);
+    setVisionStatus(null);
+    if (isInsecureMediaContext()) {
+      setCaptureError(INSECURE_MEDIA_MESSAGE);
+      return;
+    }
     if (!navigator.mediaDevices?.getDisplayMedia) {
       setCaptureError("Screen capture isn't supported in this browser.");
       return;
     }
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: 4 },
-        audio: false,
-      });
+        video: {
+          frameRate: 8,
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+        audio: true,
+        preferCurrentTab: false,
+        selfBrowserSurface: "exclude",
+        monitorTypeSurfaces: "include",
+      } as DisplayMediaStreamOptions);
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play().catch(() => {});
+      const video = videoRef.current;
+      if (video) {
+        video.srcObject = stream;
+        video.muted = true;
+        await video.play().catch(() => {});
+        if (video.readyState < 2) {
+          await new Promise<void>((resolve) => {
+            let settled = false;
+            const done = () => {
+              if (settled) return;
+              settled = true;
+              clearTimeout(tid);
+              video.removeEventListener("loadeddata", done);
+              resolve();
+            };
+            const tid = window.setTimeout(done, 2500);
+            video.addEventListener("loadeddata", done);
+          });
+        }
       }
-      const track = stream.getVideoTracks()[0];
-      if (track) {
-        videoTrackRef.current = track;
-        track.addEventListener("ended", stopCapture);
-      }
+      stream.getVideoTracks()[0]?.addEventListener("ended", stopCapture);
+      lastFrameSig.current = "";
+      lastVisionQuestion.current = "";
       setCapturing(true);
+      setAutoRead(true);
+      setCaptureError(null);
+      const heard = startWithStream(stream);
+      setVisionStatus(
+        heard.ok
+          ? "Sharing — reading the window and listening for spoken questions."
+          : "Sharing — reading the window. For speech, share a Chrome tab with audio, or Start listening with the microphone.",
+      );
     } catch (e) {
       const name = e instanceof DOMException ? e.name : "";
       if (name === "NotAllowedError") {
         setCaptureError(
-          "Screen capture was denied. Click “Share screen” and allow access to continue — or just type questions manually below.",
+          "Screen capture was denied. Click “Share screen”, pick the interview window (Zoom/Meet/docs — not this helper), and allow access.",
         );
       } else {
         setCaptureError(
@@ -184,64 +327,132 @@ export default function DesktopPage() {
       }
       setCapturing(false);
     }
-  }, [stopCapture]);
+  }, [startWithStream, stopCapture]);
 
-  const grabFrame = useCallback((): string | null => {
+  const grabFrame = useCallback((): { dataUrl: string; sig: string } | null => {
     const video = videoRef.current;
-    if (!video || video.videoWidth === 0) return null;
-    const scale = Math.min(1, 1280 / video.videoWidth);
+    if (!video || video.videoWidth < 8 || video.readyState < 2) return null;
+    const scale = Math.min(1, 1600 / video.videoWidth);
     const canvas = document.createElement("canvas");
-    canvas.width = Math.round(video.videoWidth * scale);
-    canvas.height = Math.round(video.videoHeight * scale);
-    const ctx = canvas.getContext("2d");
+    canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+    canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return null;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL("image/jpeg", 0.7);
+    const sample = ctx.getImageData(
+      0,
+      0,
+      Math.min(48, canvas.width),
+      Math.min(27, canvas.height),
+    ).data;
+    let acc = 0;
+    let brightness = 0;
+    let n = 0;
+    for (let i = 0; i < sample.length; i += 16) {
+      const r = sample[i];
+      const g = sample[i + 1];
+      const b = sample[i + 2];
+      acc = (acc * 33 + r + g * 3 + b * 5) >>> 0;
+      brightness += r + g + b;
+      n++;
+    }
+    if (n > 0 && brightness / (n * 3) < 6) return null;
+    return {
+      dataUrl: canvas.toDataURL("image/jpeg", 0.82),
+      sig: `${canvas.width}x${canvas.height}:${acc}`,
+    };
   }, []);
 
   const runVision = useCallback(
     async (auto: boolean) => {
       if (!code) return;
+      if (generatingRef.current || visionBusy.current) return;
+      if (auto && Date.now() < visionCooldownUntil.current) return;
       const frame = grabFrame();
       if (!frame) {
-        if (!auto) setCaptureError("No frame captured yet. Start sharing first.");
+        if (!auto) {
+          setCaptureError(
+            "No frame yet. Share the interview window and wait a second.",
+          );
+        } else {
+          setVisionStatus("Waiting for a video frame from the shared window…");
+        }
         return;
       }
+      const now = Date.now();
+      // Retry the same pixels at least every 8s — a first miss must not lock us out.
+      if (
+        auto &&
+        frame.sig === lastFrameSig.current &&
+        now - lastFrameAt.current < 8000
+      ) {
+        return;
+      }
+      visionBusy.current = true;
+      setVisionStatus("Reading the shared screen…");
       try {
         const res = await fetch("/api/vision", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code, image: frame }),
+          body: JSON.stringify({ code, image: frame.dataUrl }),
         });
         if (!res.ok) {
-          throw new Error(`Vision request failed: ${res.status}`);
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || "Vision request failed");
         }
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
+        lastFrameSig.current = frame.sig;
+        lastFrameAt.current = Date.now();
         setVisionSupported(Boolean(data.supported));
         if (data.note) setVisionNote(data.note);
         const q: string | null = data.question ?? null;
-        if (q && q !== lastVisionQuestion.current) {
-          lastVisionQuestion.current = q;
-          setManualQuestion(q);
-          if (auto) generate(q);
+        if (!q) {
+          const miss =
+            "No question in this frame. Share the window that shows the written question — not this helper.";
+          setVisionStatus(miss);
+          if (!auto) setCaptureError(miss);
+          return;
         }
-      } catch {
-        if (!auto) setError("Vision request failed.");
+        setCaptureError(null);
+        setVisionStatus(`Saw: ${q}`);
+        if (
+          lastVisionQuestion.current &&
+          normalizeQuestion(q) === normalizeQuestion(lastVisionQuestion.current)
+        ) {
+          return;
+        }
+        lastVisionQuestion.current = q;
+        setManualQuestion(q);
+        await generate(q);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Vision request failed.";
+        setVisionStatus(msg);
+        setCaptureError(msg);
+        if (/rate limit|quota|429/i.test(msg)) {
+          visionCooldownUntil.current = Date.now() + 60_000;
+        }
+      } finally {
+        visionBusy.current = false;
       }
     },
     [code, grabFrame, generate],
   );
 
+  const runVisionRef = useRef(runVision);
+  useEffect(() => {
+    runVisionRef.current = runVision;
+  }, [runVision]);
+
   // Auto-read loop.
   useEffect(() => {
     if (!autoRead || !capturing) return;
-    const id = setInterval(() => runVision(true), VISION_INTERVAL_MS);
-    const kickoff = setTimeout(() => runVision(true), 0);
+    const tick = () => void runVisionRef.current(true);
+    const id = setInterval(tick, VISION_INTERVAL_MS);
+    const kickoff = setTimeout(tick, 400);
     return () => {
       clearInterval(id);
       clearTimeout(kickoff);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoRead, capturing]);
 
   useEffect(() => () => stopCapture(), [stopCapture]);
@@ -284,8 +495,25 @@ export default function DesktopPage() {
         </div>
       </header>
 
+      {insecureMedia && (
+        <div className="mb-6 flex items-start gap-3 rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>
+            Open this control page at{" "}
+            <a
+              href="http://localhost:47317/"
+              className="font-medium text-foreground underline underline-offset-2"
+            >
+              http://localhost:47317
+            </a>{" "}
+            on your laptop. Chrome blocks the microphone and screen capture on
+            this HTTP IP. The phone stays on the 192.168… link.
+          </p>
+        </div>
+      )}
+
       {!code ? (
-        <StartPanel creating={creating} onStart={startSession} error={error} />
+        <StartPanel creating={creating} onStart={handleStart} error={error} />
       ) : (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.3fr_1fr]">
           {/* Left column: capture + question */}
@@ -304,6 +532,7 @@ export default function DesktopPage() {
                   <video
                     ref={videoRef}
                     muted
+                    autoPlay
                     playsInline
                     className={cn(
                       "h-full w-full object-contain",
@@ -314,8 +543,9 @@ export default function DesktopPage() {
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center">
                       <Monitor className="h-10 w-10 text-muted-foreground" />
                       <p className="max-w-xs text-sm text-muted-foreground">
-                        Share the window with your interview questions. The
-                        preview stays on this device only.
+                        Share the interview window where the question is written.
+                        We read it, listen if you share tab audio, and send the
+                        answer only to your phone.
                       </p>
                     </div>
                   )}
@@ -372,6 +602,11 @@ export default function DesktopPage() {
                     Auto-read {autoRead ? "on" : "off"}
                   </button>
                 </div>
+                {visionStatus && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {visionStatus}
+                  </p>
+                )}
                 {visionSupported === false && visionNote && (
                   <p className="mt-2 text-xs text-muted-foreground">
                     {visionNote}
@@ -380,14 +615,136 @@ export default function DesktopPage() {
               </CardContent>
             </Card>
 
+            {/* Listen to the interview audio */}
+            <Card>
+              <CardContent className="pt-6">
+                <div className="mb-4 flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    <AudioLines className="h-4 w-4 text-accent" />
+                    Listen &amp; transcribe
+                  </div>
+                  {listening ? (
+                    <Badge variant="destructive">
+                      <span className="pulse-dot inline-block h-2 w-2 rounded-full bg-destructive" />
+                      Listening
+                    </Badge>
+                  ) : (
+                    <Badge variant="muted">Off</Badge>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="inline-flex overflow-hidden rounded-[var(--radius)] border border-border">
+                    {(["display", "mic"] as AudioSource[]).map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        disabled={listening}
+                        onClick={() => setAudioSource(s)}
+                        className={cn(
+                          "flex h-11 items-center gap-2 px-4 text-sm font-medium transition",
+                          audioSource === s
+                            ? "bg-accent/15 text-accent"
+                            : "text-muted-foreground hover:bg-muted/50",
+                          listening && "opacity-50",
+                        )}
+                      >
+                        {s === "display" ? (
+                          <Volume2 className="h-4 w-4" />
+                        ) : (
+                          <Mic className="h-4 w-4" />
+                        )}
+                        {s === "display" ? "Tab / system" : "Microphone"}
+                      </button>
+                    ))}
+                  </div>
+
+                  {!listening ? (
+                    <Button onClick={toggleListening} variant="accent">
+                      <AudioLines className="h-4 w-4" />
+                      Start listening
+                    </Button>
+                  ) : (
+                    <Button onClick={toggleListening} variant="secondary">
+                      <Square className="h-4 w-4" />
+                      Stop
+                    </Button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setAudioAutoAnswer((v) => !v)}
+                    className={cn(
+                      "inline-flex h-11 items-center gap-2 rounded-[var(--radius)] border px-4 text-sm font-medium transition",
+                      audioAutoAnswer
+                        ? "border-accent/50 bg-accent/15 text-accent"
+                        : "border-border text-muted-foreground hover:bg-muted/50",
+                    )}
+                  >
+                    <RadioTower className="h-4 w-4" />
+                    Auto-answer {audioAutoAnswer ? "on" : "off"}
+                  </button>
+                </div>
+
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {audioSource === "display"
+                    ? "Pick the interview browser tab and enable “Share tab audio”. Detected questions auto-generate an answer to your phone."
+                    : "Uses your microphone — best if the interviewer plays aloud on speakers."}
+                </p>
+
+                {audioError && (
+                  <div className="mt-3 flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>{audioError}</span>
+                  </div>
+                )}
+
+                <div className="mt-4">
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Live transcript
+                    </span>
+                    <div className="flex items-center gap-2">
+                      {audioSupported === false && (
+                        <span className="text-[11px] text-muted-foreground">
+                          mock (no key)
+                        </span>
+                      )}
+                      {audioTranscript && (
+                        <button
+                          type="button"
+                          onClick={clearTranscript}
+                          className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+                        >
+                          <Eraser className="h-3 w-3" />
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="scroll-slim max-h-32 overflow-y-auto rounded-lg border border-border bg-muted/20 p-3 text-sm text-muted-foreground">
+                    {audioTranscript ? (
+                      audioTranscript
+                    ) : listening ? (
+                      <span className="flex items-center gap-2">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Listening for speech…
+                      </span>
+                    ) : (
+                      "Transcript of the interviewer's speech appears here (stays on this device — only the answer goes to the phone)."
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             <Card>
               <CardContent className="pt-6">
                 <form onSubmit={submitManual} className="flex flex-col gap-3">
-                  <label htmlFor="manual-question" className="text-sm font-medium">
+                  <label className="text-sm font-medium">
                     Question to answer
                   </label>
                   <Textarea
-                    id="manual-question"
                     value={manualQuestion}
                     onChange={(e) => setManualQuestion(e.target.value)}
                     placeholder="Type or paste the interview question — e.g. “Tell me about a time you shipped an LLM feature in production.”"
@@ -434,12 +791,12 @@ export default function DesktopPage() {
                 <CardContent className="pt-6">
                   <p className="mb-3 text-sm font-medium">Recent questions</p>
                   <ul className="flex flex-col gap-2">
-                    {questionHistory.slice(0, 6).map((entry) => (
+                    {questionHistory.slice(0, 6).map((q, i) => (
                       <li
-                        key={entry.id}
+                        key={i}
                         className="truncate rounded-lg border border-border bg-muted/20 px-3 py-2 text-sm text-muted-foreground"
                       >
-                        {entry.question}
+                        {q}
                       </li>
                     ))}
                   </ul>
@@ -467,7 +824,7 @@ export default function DesktopPage() {
                 </div>
                 <div className="w-full">
                   <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 p-2">
-                    <span className="flex-1 truncate text-left text-xs text-muted-foreground">
+                    <span className="flex-1 break-all text-left text-xs text-muted-foreground">
                       {phoneUrl}
                     </span>
                     <Button size="sm" variant="ghost" onClick={copyLink}>
@@ -526,7 +883,7 @@ function StartPanel({
   error,
 }: {
   creating: boolean;
-  onStart: () => void;
+  onStart: () => void | Promise<void>;
   error: string | null;
 }) {
   return (
@@ -556,7 +913,7 @@ function StartPanel({
         {error && <p className="text-sm text-destructive">{error}</p>}
         <ol className="grid w-full max-w-md gap-3 text-left text-sm text-muted-foreground sm:grid-cols-3">
           <Step n={1} label="Pair your phone with the QR code" />
-          <Step n={2} label="Share your interview screen" />
+          <Step n={2} label="Allow the mic — spoken questions answer on your phone" />
           <Step n={3} label="Read answers on your phone" />
         </ol>
       </CardContent>

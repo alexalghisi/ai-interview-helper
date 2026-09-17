@@ -31,6 +31,7 @@ export type ServerEvent =
   | { type: "status"; status: SessionStatus }
   | { type: "answer_start"; question: string }
   | { type: "answer_end"; entry: QAEntry }
+  | { type: "phones"; connectedPhones: number }
   | { type: "ping" };
 
 export const STATUS_LABEL: Record<SessionStatus, string> = {

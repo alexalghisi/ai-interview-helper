@@ -40,18 +40,26 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
 
-  startAnswer(code, question);
+  const generation = startAnswer(code, question);
+  if (!generation) {
+    return NextResponse.json({ error: "Session not found" }, { status: 404 });
+  }
 
   try {
     for await (const delta of streamAnswer(question)) {
-      appendDelta(code, delta);
+      if (!appendDelta(code, delta, generation)) {
+        return NextResponse.json({ ok: true, superseded: true });
+      }
     }
-    const entry = finishAnswer(code);
+    const entry = finishAnswer(code, generation);
     return NextResponse.json({ ok: true, id: entry?.id });
   } catch (err) {
-    const message =
+    const raw =
       err instanceof Error ? err.message : "Failed to generate answer";
-    failAnswer(code, message);
+    const message = /quota|rate-limit|429/i.test(raw)
+      ? "Gemini rate limit — wait ~1 min, then Read question now."
+      : raw;
+    failAnswer(code, message, generation);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -12,6 +12,19 @@
  */
 
 export const COOKIE_NAME = "aih_session";
+
+export function cookieFromRequest(req: Request, name: string): string | undefined {
+  const header = req.headers.get("cookie");
+  if (!header) return undefined;
+  for (const part of header.split(";")) {
+    const trimmed = part.trim();
+    if (trimmed.startsWith(`${name}=`)) {
+      return decodeURIComponent(trimmed.slice(name.length + 1));
+    }
+  }
+  return undefined;
+}
+
 const TOKEN_VERSION = "v1";
 const MAX_AGE_MS = 1000 * 60 * 60 * 24 * 30; // 30 days
 export const COOKIE_MAX_AGE_S = Math.floor(MAX_AGE_MS / 1000);
@@ -24,6 +37,38 @@ export function getAccessPassword(): string | undefined {
 /** Auth is only enforced when a password is set. */
 export function isAuthConfigured(): boolean {
   return Boolean(getAccessPassword());
+}
+
+function requestHostname(req: Request): string {
+  const raw =
+    req.headers.get("x-forwarded-host")?.split(",")[0].trim() ||
+    req.headers.get("host") ||
+    "";
+  if (raw.startsWith("[")) {
+    const end = raw.indexOf("]");
+    return (end === -1 ? raw : raw.slice(1, end)).toLowerCase();
+  }
+  if (raw) return raw.split(":")[0].toLowerCase();
+  try {
+    return new URL(req.url).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+/** Laptop via localhost — skip the password; LAN / phone still need it. */
+export function requestIsLoopback(req: Request): boolean {
+  const hostname = requestHostname(req);
+  return (
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "::1"
+  );
+}
+
+/** Password is required for this request (LAN/phone), not for localhost. */
+export function authRequiredForRequest(req: Request): boolean {
+  return isAuthConfigured() && !requestIsLoopback(req);
 }
 
 /**

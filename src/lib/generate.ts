@@ -1,6 +1,10 @@
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { generateText, streamText } from "ai";
-import { PERSONA_SYSTEM_PROMPT, VISION_SYSTEM_PROMPT } from "./persona";
+import {
+  PERSONA_SYSTEM_PROMPT,
+  TRANSCRIBE_SYSTEM_PROMPT,
+  VISION_SYSTEM_PROMPT,
+} from "./persona";
 
 /**
  * Provider is intentionally swappable. Default is Google Gemini via the Vercel
@@ -15,11 +19,12 @@ const GEMINI_API_KEY =
 export const hasModelKey = () => Boolean(GEMINI_API_KEY);
 
 // Fast, cheap default. Overridable via env.
-const ANSWER_MODEL = process.env.ANSWER_MODEL || "gemini-3.6-flash";
-const VISION_MODEL = process.env.VISION_MODEL || "gemini-3.6-flash";
+const ANSWER_MODEL = process.env.ANSWER_MODEL || "gemini-3.1-flash-lite";
+const VISION_MODEL = process.env.VISION_MODEL || "gemini-3.1-flash-lite";
+const TRANSCRIBE_MODEL = process.env.TRANSCRIBE_MODEL || "gemini-3.1-flash-lite";
 
 // Cap output so answers stay short/speakable and first-token latency is low.
-const ANSWER_MAX_TOKENS = Number(process.env.ANSWER_MAX_TOKENS || 512);
+const ANSWER_MAX_TOKENS = Number(process.env.ANSWER_MAX_TOKENS || 360);
 
 // The SDK reads GOOGLE_GENERATIVE_AI_API_KEY automatically; we also accept
 // GEMINI_API_KEY and pass whichever is present. Zero-config once a key is set.
@@ -51,9 +56,10 @@ export async function* streamAnswer(
   const result = streamText({
     model: google(ANSWER_MODEL),
     system: PERSONA_SYSTEM_PROMPT,
-    prompt: `Q: ${question}\nAnswer as Alessandro, spoken aloud, concise.`,
-    temperature: 0.5,
+    prompt: `Q: ${question}\nEnglish only. First person as Alessandro. Dense senior answer, ~120 words, one real story. Stop when done.`,
+    temperature: 0.35,
     maxOutputTokens: ANSWER_MAX_TOKENS,
+    maxRetries: 0,
     providerOptions: {
       // Gemini "thinking" adds latency; keep it off for fast first token.
       google: { thinkingConfig: { thinkingBudget: 0 } },
@@ -86,6 +92,11 @@ export async function readQuestionFromImage(
     return null;
   }
 
+  const match = imageDataUrl.match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) return null;
+  const mediaType = match[1] || "image/jpeg";
+  const bytes = Buffer.from(match[2], "base64");
+
   const { text } = await generateText({
     model: google(VISION_MODEL),
     system: VISION_SYSTEM_PROMPT,
@@ -93,22 +104,90 @@ export async function readQuestionFromImage(
       {
         role: "user",
         content: [
-          { type: "text", text: "What interview question is on this screen?" },
-          { type: "image", image: new URL(imageDataUrl) },
+          {
+            type: "text",
+            text: "Extract the interview question visible on this screenshot. Return only that question text. If there is truly no question, return exactly NO_QUESTION.",
+          },
+          { type: "image", image: bytes, mediaType },
         ],
       },
     ],
     temperature: 0,
+    maxRetries: 1,
+    maxOutputTokens: 1024,
+    providerOptions: {
+      google: {
+        thinkingConfig: { thinkingBudget: 0 },
+        // High res so small on-screen text (chat, LeetCode, captions) is readable.
+        mediaResolution: "MEDIA_RESOLUTION_HIGH",
+      },
+    },
   });
 
-  const cleaned = text.trim();
-  if (!cleaned || cleaned.toUpperCase().includes("NO_QUESTION")) {
+  const cleaned = text.trim().replace(/^["'`]+|["'`]+$/g, "");
+  if (!cleaned) return null;
+  const upper = cleaned.toUpperCase();
+  if (upper === "NO_QUESTION" || upper.startsWith("NO_QUESTION")) {
     return null;
   }
   return cleaned;
 }
 
+/**
+ * Transcribe a short audio chunk (base64) to text. Uses a Gemini audio model
+ * when a key is present; otherwise a rotating mock utterance so the full
+ * audio → question → answer path is demoable/testable without a key.
+ */
+export async function transcribeAudio(
+  base64: string,
+  mediaType: string,
+): Promise<string> {
+  if (!hasModelKey()) {
+    return mockTranscript();
+  }
+
+  const bytes = Buffer.from(base64, "base64");
+  const { text } = await generateText({
+    model: google(TRANSCRIBE_MODEL),
+    system: TRANSCRIBE_SYSTEM_PROMPT,
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: "Transcribe the interviewer's speech in this audio. Return only the words spoken, or NO_SPEECH if silent.",
+          },
+          { type: "file", data: bytes, mediaType: mediaType || "audio/webm" },
+        ],
+      },
+    ],
+    temperature: 0,
+    maxRetries: 0,
+  });
+
+  const cleaned = text.trim();
+  if (!cleaned || cleaned.toUpperCase().includes("NO_SPEECH")) return "";
+  return cleaned;
+}
+
 /* ------------------------------- Mock engine ------------------------------ */
+
+// Rotating interviewer utterances so the audio path is testable without a key.
+const MOCK_UTTERANCES = [
+  "So to start, can you tell me about yourself and your background?",
+  "Great. Tell me about a time you shipped an LLM feature in production.",
+  "Interesting. How would you design a low-latency streaming answer system?",
+  "What do you consider your biggest strength as an engineer?",
+  "And why do you want to work here specifically?",
+];
+let mockUtteranceIndex = 0;
+
+function mockTranscript(): string {
+  const u = MOCK_UTTERANCES[mockUtteranceIndex % MOCK_UTTERANCES.length];
+  mockUtteranceIndex++;
+  return u;
+}
 
 function pick<T>(arr: T[], seed: number): T {
   return arr[seed % arr.length];
