@@ -51,6 +51,8 @@ type Session = {
   status: SessionStatus;
   entries: QAEntry[];
   version: number;
+  /** Bumped only for changes a control client can see (never answer deltas). */
+  controlVersion: number;
   subscribers: Set<SubRec>;
 };
 
@@ -106,6 +108,7 @@ function loadFromDisk(store: Store) {
           existing.entries = entries;
           existing.updatedAt = row.updatedAt;
           existing.version += 1;
+          existing.controlVersion += 1;
         }
         continue;
       }
@@ -116,6 +119,7 @@ function loadFromDisk(store: Store) {
         status: row.status === "streaming" ? "done" : (row.status ?? "idle"),
         entries,
         version: row.version ?? 0,
+        controlVersion: row.controlVersion ?? 0,
         subscribers: new Set(),
       });
     }
@@ -212,12 +216,11 @@ export function waitForUpdate(
   const session = getSession(code);
   if (!session) return Promise.resolve(undefined);
 
-  const snapshot = () => {
-    const state = toPublicState(session);
-    return role === "control" ? stripAnswers(state) : state;
-  };
+  const snapshot = () => publicStateForRole(session, role);
+  const currentVersion = () =>
+    role === "control" ? session.controlVersion : session.version;
 
-  if (!Number.isFinite(since) || session.version > since) {
+  if (!Number.isFinite(since) || currentVersion() > since) {
     return Promise.resolve(snapshot());
   }
 
@@ -258,6 +261,7 @@ export function createSession(): PublicState {
     status: "idle",
     entries: [],
     version: 0,
+    controlVersion: 0,
     subscribers: new Set(),
   };
   store.sessions.set(code, session);
@@ -280,23 +284,37 @@ export function getPublicState(code: string): PublicState | undefined {
 }
 
 /** The desktop is the screen being shared — it must never receive answer text. */
-function stripAnswers(state: PublicState): PublicState {
+function publicStateForRole(s: Session, role: SubscriberRole): PublicState {
+  const state = toPublicState(s);
+  if (role !== "control") return state;
   return {
     ...state,
     entries: state.entries.map((e) => ({ ...e, answer: "" })),
+    // Control clients don't see deltas, so they must not wait on a cursor that
+    // deltas move — otherwise a long poll returns instantly, forever.
+    version: s.controlVersion,
   };
 }
 
 function eventForRole(
   event: ServerEvent,
   role: SubscriberRole,
+  session?: Session,
 ): ServerEvent | null {
   if (role !== "control") return event;
   switch (event.type) {
     case "delta":
       return null;
     case "state":
-      return { type: "state", state: stripAnswers(event.state) };
+      return {
+        type: "state",
+        state: session
+          ? publicStateForRole(session, role)
+          : {
+              ...event.state,
+              entries: event.state.entries.map((e) => ({ ...e, answer: "" })),
+            },
+      };
     case "answer_start":
     case "answer_end":
       return { type: event.type, entry: { ...event.entry, answer: "" } };
@@ -308,9 +326,12 @@ function eventForRole(
 function broadcast(session: Session, event: ServerEvent) {
   // Every broadcast is a change, and the version is what long-polling clients
   // wait on — so bump it here rather than at each call site.
-  if (event.type !== "ping") session.version += 1;
+  if (event.type !== "ping") {
+    session.version += 1;
+    if (event.type !== "delta") session.controlVersion += 1;
+  }
   for (const sub of session.subscribers) {
-    const payload = eventForRole(event, sub.role);
+    const payload = eventForRole(event, sub.role, session);
     if (!payload) continue;
     try {
       sub.send(payload);
@@ -340,11 +361,7 @@ export function subscribe(
   session.updatedAt = Date.now();
   // Snapshot only to the new listener — broadcasting state to everyone
   // mid-stream would duplicate or rewind the answer they are reading.
-  const snapshot = eventForRole(
-    { type: "state", state: toPublicState(session) },
-    role,
-  );
-  if (snapshot) send(snapshot);
+  send({ type: "state", state: publicStateForRole(session, role) });
   broadcastPresence(session);
   return () => {
     session.subscribers.delete(rec);

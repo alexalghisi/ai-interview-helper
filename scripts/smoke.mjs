@@ -263,6 +263,53 @@ async function main() {
     `${rounds} round trips`,
   );
 
+  // The control page polls the same endpoint. It never sees deltas, so it must
+  // not be woken by them — otherwise it spins for the whole answer.
+  const controlCode = (
+    await (await fetch(`${BASE}/api/session`, { method: "POST" })).json()
+  ).code;
+
+  let controlVersion = (
+    await (
+      await fetch(
+        `${BASE}/api/session/${controlCode}/updates?role=control&since=-1&wait=1000`,
+      )
+    ).json()
+  ).state.version;
+
+  let controlRounds = 0;
+  let controlPollLeak = false;
+  const controlStart = Date.now();
+  const controlPolling = (async () => {
+    while (Date.now() - controlStart < 20000) {
+      const r = await fetch(
+        `${BASE}/api/session/${controlCode}/updates?role=control&since=${controlVersion}&wait=4000`,
+        { cache: "no-store" },
+      );
+      if (!r.ok) break;
+      const { state } = await r.json();
+      controlVersion = state.version;
+      controlRounds += 1;
+      if (state.entries.some((e) => e.answer)) controlPollLeak = true;
+      if (state.entries[0]?.done) return;
+    }
+  })();
+
+  await sleep(200);
+  await fetch(`${BASE}/api/answer`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: controlCode, question: Q2 }),
+  });
+  await controlPolling;
+
+  check(
+    controlRounds > 0 && controlRounds <= 6,
+    "control long-poll isn't woken by every token",
+    `${controlRounds} round trips`,
+  );
+  check(!controlPollLeak, "control long-poll carries no answer text");
+
   console.log(
     `\n${failures === 0 ? "PASS" : `FAIL — ${failures} check(s) failed`}\n`,
   );
