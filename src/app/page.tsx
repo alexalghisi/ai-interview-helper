@@ -164,24 +164,55 @@ export default function DesktopPage() {
     return () => es.close();
   }, [code]);
 
+  // Long-poll the same state. It keeps status/presence accurate when SSE can't
+  // get through a buffering proxy, and restarts a session the server lost.
   useEffect(() => {
     if (!code) return;
     let cancelled = false;
-    const check = async () => {
-      try {
-        const r = await fetch(`/api/session/${code}`, { cache: "no-store" });
-        if (!cancelled && r.status === 404) {
-          await startSession();
+    let version = -1;
+
+    const loop = async () => {
+      while (!cancelled) {
+        try {
+          const r = await fetch(
+            `/api/session/${code}/updates?role=control&since=${version}&wait=20000`,
+            { cache: "no-store" },
+          );
+          if (cancelled) return;
+          if (r.status === 404) {
+            await startSession();
+            return;
+          }
+          if (!r.ok) {
+            await new Promise((res) => window.setTimeout(res, 2000));
+            continue;
+          }
+          const data = await r.json();
+          const state = data?.state as
+            | {
+                status: SessionStatus;
+                connectedPhones: number;
+                connectedViewers: number;
+                entries: { question: string }[];
+                version: number;
+              }
+            | undefined;
+          if (!state) continue;
+          version = Math.max(version, state.version ?? -1);
+          setStatus(state.status);
+          setConnectedPhones(state.connectedPhones);
+          setConnectedViewers(state.connectedViewers);
+          setQuestionHistory(state.entries.map((e) => e.question));
+        } catch {
+          if (cancelled) return;
+          await new Promise((res) => window.setTimeout(res, 2000));
         }
-      } catch {
-        /* ignore */
       }
     };
-    void check();
-    const id = window.setInterval(check, 2500);
+
+    void loop();
     return () => {
       cancelled = true;
-      window.clearInterval(id);
     };
   }, [code, startSession]);
 

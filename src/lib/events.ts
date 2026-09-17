@@ -30,6 +30,8 @@ export type PublicState = {
   connectedPhones: number;
   connectedViewers: number;
   updatedAt: number;
+  /** Bumped on every change — the cursor long-polling clients wait on. */
+  version: number;
 };
 
 export type ServerEvent =

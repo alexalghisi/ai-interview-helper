@@ -160,7 +160,7 @@ export function AnswerFeed({
     let es: EventSource | null = null;
     let closed = false;
     let lastEventAt = 0;
-    let live = false;
+    let version = -1;
 
     const noteEntry = (entry: QAEntry) => {
       setEntries((prev) => mergeEntries(prev, [entry]));
@@ -171,14 +171,19 @@ export function AnswerFeed({
     };
 
     const applyState = (state: PublicState) => {
+      version = Math.max(version, state.version ?? -1);
       setStatus(state.status);
       setEntries((prev) => mergeEntries(prev, ascending(state.entries || [])));
-      for (const e of state.entries || []) seenIdsRef.current.add(e.id);
+      for (const e of state.entries || []) {
+        if (!seenIdsRef.current.has(e.id)) {
+          seenIdsRef.current.add(e.id);
+          if (!followRef.current && e.answer) setUnread((n) => n + 1);
+        }
+      }
     };
 
     const handle = (event: ServerEvent) => {
       lastEventAt = Date.now();
-      live = true;
       setConnected(true);
       switch (event.type) {
         case "state":
@@ -219,14 +224,7 @@ export function AnswerFeed({
       if (closed) return;
       es?.close();
       es = new EventSource(`/api/session/${code}/stream?role=${role}`);
-      es.onopen = () => {
-        live = true;
-        setConnected(true);
-      };
-      es.onerror = () => {
-        live = false;
-        setConnected(false);
-      };
+      es.onerror = () => setConnected(false);
       es.onmessage = (ev) => {
         try {
           handle(JSON.parse(ev.data) as ServerEvent);
@@ -236,39 +234,71 @@ export function AnswerFeed({
       };
     };
 
-    const loadSnapshot = async (initial: boolean) => {
-      if (closed) return;
-      if (!initial && live && Date.now() - lastEventAt < 6000) return;
-      try {
-        const r = await fetch(`/api/session/${code}`, { cache: "no-store" });
-        if (r.status === 404) {
-          setNotFound(true);
-          return;
+    // SSE counts as working only once a frame actually lands: some proxies
+    // (Cloudflare quick tunnels) accept the request, then buffer it forever.
+    const sseWorking = () =>
+      !!es &&
+      es.readyState === EventSource.OPEN &&
+      lastEventAt > 0 &&
+      Date.now() - lastEventAt < 30_000;
+
+    const sleep = (ms: number) =>
+      new Promise((r) => window.setTimeout(r, ms));
+
+    /** Long-polling fallback: returns the moment anything changes. */
+    const pollLoop = async () => {
+      let lastReconnect = Date.now();
+      while (!closed) {
+        if (sseWorking()) {
+          await sleep(2000);
+          continue;
         }
-        if (r.status === 401) {
-          router.push(
-            `/login?next=${encodeURIComponent(window.location.pathname)}`,
+        if (Date.now() - lastReconnect > 20_000) {
+          lastReconnect = Date.now();
+          connect();
+        }
+        try {
+          const r = await fetch(
+            `/api/session/${code}/updates?since=${version}&wait=20000`,
+            { cache: "no-store" },
           );
-          return;
+          if (closed) return;
+          if (r.status === 404) {
+            setNotFound(true);
+            await sleep(3000);
+            continue;
+          }
+          if (r.status === 401) {
+            router.push(
+              `/login?next=${encodeURIComponent(window.location.pathname)}`,
+            );
+            return;
+          }
+          if (!r.ok) {
+            await sleep(1500);
+            continue;
+          }
+          const data: { state: PublicState } = await r.json();
+          if (!data?.state) {
+            await sleep(1500);
+            continue;
+          }
+          setNotFound(false);
+          setConnected(true);
+          applyState(data.state);
+        } catch {
+          if (closed) return;
+          setConnected(false);
+          await sleep(1500);
         }
-        if (!r.ok) return;
-        const data: { state: PublicState } = await r.json();
-        if (!data?.state) return;
-        setNotFound(false);
-        applyState(data.state);
-        if (!es || es.readyState === EventSource.CLOSED) connect();
-      } catch {
-        /* transient — the next tick retries */
       }
     };
 
-    void loadSnapshot(true);
     connect();
-    const pollId = window.setInterval(() => void loadSnapshot(false), 2000);
+    void pollLoop();
 
     return () => {
       closed = true;
-      window.clearInterval(pollId);
       es?.close();
     };
   }, [code, role, router]);
@@ -314,25 +344,43 @@ export function AnswerFeed({
     let lastTop = currentTop();
     let ticking = false;
 
+    // Only a real gesture may pause auto-follow. Browsers also move the scroll
+    // position on their own (scroll anchoring, viewport resize, interrupted
+    // smooth scrolls) and that must not look like "the reader scrolled up".
+    let lastGestureAt = 0;
+    const noteGesture = () => {
+      lastGestureAt = Date.now();
+    };
+    const gestures = ["wheel", "touchstart", "touchmove", "keydown", "pointerdown"];
+    for (const name of gestures) {
+      window.addEventListener(name, noteGesture, { passive: true });
+    }
+
     const onScroll = () => {
       if (ticking) return;
       ticking = true;
       window.requestAnimationFrame(() => {
         ticking = false;
         const top = currentTop();
-        const movedUp = top < lastTop - 4;
+        const movedUp = top < lastTop - 24;
         lastTop = top;
         if (Date.now() < programmaticUntil.current) return;
         const atBottom = distanceFromBottom() < 80;
-        // Scrolling up = "I'm reading this one" → freeze the feed.
+        const byHand = Date.now() - lastGestureAt < 1500;
+        // Scrolling up by hand = "I'm reading this one" → freeze the feed.
         // Arriving back at the bottom = "keep them coming" → follow again.
-        if (movedUp && !atBottom) setFollow(false);
+        if (movedUp && byHand && !atBottom) setFollow(false);
         else if (atBottom && !manualHold.current) setFollow(true);
       });
     };
 
     target.addEventListener("scroll", onScroll, { passive: true });
-    return () => target.removeEventListener("scroll", onScroll);
+    return () => {
+      target.removeEventListener("scroll", onScroll);
+      for (const name of gestures) {
+        window.removeEventListener(name, noteGesture);
+      }
+    };
   }, [setFollow]);
 
   const jumpToLatest = useCallback(() => {
