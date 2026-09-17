@@ -212,6 +212,57 @@ async function main() {
     latecomer.close(),
   ]);
 
+  // Long-polling fallback: the transport a phone uses behind a proxy that
+  // buffers SSE (Cloudflare quick tunnels do).
+  const pollCode = (
+    await (await fetch(`${BASE}/api/session`, { method: "POST" })).json()
+  ).code;
+
+  let version = -1;
+  let answer = "";
+  let rounds = 0;
+  let firstTextMs = 0;
+  const started = Date.now();
+
+  const polling = (async () => {
+    while (Date.now() - started < 30000) {
+      const r = await fetch(
+        `${BASE}/api/session/${pollCode}/updates?since=${version}&wait=5000`,
+        { cache: "no-store" },
+      );
+      if (!r.ok) break;
+      const { state } = await r.json();
+      version = state.version;
+      rounds += 1;
+      const entry = state.entries[0];
+      if (entry?.answer) {
+        if (!firstTextMs) firstTextMs = Date.now() - started;
+        answer = entry.answer;
+        if (entry.done) return;
+      }
+    }
+  })();
+
+  await sleep(200);
+  await fetch(`${BASE}/api/answer`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: pollCode, question: Q1 }),
+  });
+  await polling;
+
+  check(answer.length > 80, "long-polling client received the full answer");
+  check(
+    firstTextMs > 0 && firstTextMs < 4000,
+    "long-polling saw the first text quickly",
+    `${firstTextMs}ms`,
+  );
+  check(
+    rounds > 2 && rounds < 60,
+    "long-polling batches deltas instead of hammering",
+    `${rounds} round trips`,
+  );
+
   console.log(
     `\n${failures === 0 ? "PASS" : `FAIL — ${failures} check(s) failed`}\n`,
   );

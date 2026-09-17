@@ -31,7 +31,11 @@ import type {
   SessionStatus,
 } from "./events";
 
-export type SubscriberRole = "phone" | "viewer" | "control";
+/**
+ * "poll" is a long-polling client: it sees everything a phone sees but is not
+ * counted as a connected device.
+ */
+export type SubscriberRole = "phone" | "viewer" | "control" | "poll";
 
 type Subscriber = (event: ServerEvent) => void;
 
@@ -46,6 +50,7 @@ type Session = {
   updatedAt: number;
   status: SessionStatus;
   entries: QAEntry[];
+  version: number;
   subscribers: Set<SubRec>;
 };
 
@@ -59,6 +64,9 @@ const MAX_AGE_MS = 1000 * 60 * 60 * 12;
 
 /** How many Q&A cards a session keeps — enough to scroll back through. */
 const MAX_ENTRIES = 40;
+
+/** Batch window for long-polling responses (ms). */
+const COALESCE_MS = 180;
 
 type PersistedSession = Omit<Session, "subscribers">;
 
@@ -97,6 +105,7 @@ function loadFromDisk(store: Store) {
           existing.status = row.status;
           existing.entries = entries;
           existing.updatedAt = row.updatedAt;
+          existing.version += 1;
         }
         continue;
       }
@@ -106,6 +115,7 @@ function loadFromDisk(store: Store) {
         updatedAt: row.updatedAt ?? now,
         status: row.status === "streaming" ? "done" : (row.status ?? "idle"),
         entries,
+        version: row.version ?? 0,
         subscribers: new Set(),
       });
     }
@@ -184,7 +194,57 @@ function toPublicState(s: Session): PublicState {
     connectedPhones: countRole(s, "phone"),
     connectedViewers: countRole(s, "viewer"),
     updatedAt: s.updatedAt,
+    version: s.version,
   };
+}
+
+/**
+ * Long-polling transport. Some proxies (Cloudflare quick tunnels among them)
+ * buffer SSE responses to death; this resolves as soon as anything changes, so
+ * a phone behind such a proxy still gets answers within a heartbeat.
+ */
+export function waitForUpdate(
+  code: string,
+  since: number,
+  timeoutMs = 25_000,
+  role: SubscriberRole = "poll",
+): Promise<PublicState | undefined> {
+  const session = getSession(code);
+  if (!session) return Promise.resolve(undefined);
+
+  const snapshot = () => {
+    const state = toPublicState(session);
+    return role === "control" ? stripAnswers(state) : state;
+  };
+
+  if (!Number.isFinite(since) || session.version > since) {
+    return Promise.resolve(snapshot());
+  }
+
+  return new Promise((resolve) => {
+    let done = false;
+    let coalesce: ReturnType<typeof setTimeout> | null = null;
+
+    const settle = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      if (coalesce) clearTimeout(coalesce);
+      session.subscribers.delete(rec);
+      resolve(snapshot());
+    };
+
+    // Token deltas arrive dozens of times a second; batch them briefly so one
+    // answer costs a handful of round trips instead of hundreds.
+    const onChange = () => {
+      if (done || coalesce) return;
+      coalesce = setTimeout(settle, COALESCE_MS);
+    };
+
+    const rec: SubRec = { send: onChange, role };
+    const timer = setTimeout(settle, timeoutMs);
+    session.subscribers.add(rec);
+  });
 }
 
 export function createSession(): PublicState {
@@ -197,6 +257,7 @@ export function createSession(): PublicState {
     updatedAt: now,
     status: "idle",
     entries: [],
+    version: 0,
     subscribers: new Set(),
   };
   store.sessions.set(code, session);
@@ -245,6 +306,9 @@ function eventForRole(
 }
 
 function broadcast(session: Session, event: ServerEvent) {
+  // Every broadcast is a change, and the version is what long-polling clients
+  // wait on — so bump it here rather than at each call site.
+  if (event.type !== "ping") session.version += 1;
   for (const sub of session.subscribers) {
     const payload = eventForRole(event, sub.role);
     if (!payload) continue;

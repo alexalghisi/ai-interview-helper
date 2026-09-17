@@ -35,6 +35,20 @@ screen-share never sees the help.
   (`src/lib/session-store.ts`), mirrored to disk so a restart doesn't orphan the
   QR code.
 
+### Transport: SSE, with a long-polling fallback
+
+On a LAN (or localhost) answers arrive token by token over SSE. Some proxies —
+**Cloudflare quick tunnels among them** — accept an SSE request and then buffer
+it forever, so the phone would sit there connected and empty.
+
+Every answer view therefore watches whether SSE frames are actually landing. If
+none arrive, it falls back to **long-polling** `/api/session/[code]/updates`,
+which holds the request open until something changes and returns immediately
+after (deltas batched into ~180 ms chunks). The phone still gets answers within
+a heartbeat over a tunnel, at a handful of round trips per answer, and the view
+switches back to SSE as soon as it works again. The control page uses the same
+long-poll for status and presence.
+
 ## Reading at your own pace
 
 The thing an interview assistant must never do is yank the answer away while
@@ -159,8 +173,9 @@ npm run test:smoke                # in another
 `scripts/smoke.mjs` (zero dependencies) creates a session, attaches a phone, a
 browser window and a control subscriber, fires two overlapping questions, and
 asserts that both answers arrive in full on both views, that neither replaces
-the other, that the control role receives no answer text, and that a late
-joiner gets the whole backlog.
+the other, that the control role receives no answer text, that a late joiner
+gets the whole backlog, and that the long-polling fallback delivers the same
+answer promptly without hammering the server.
 
 > **Sharing the app over a proxy / tunnel / hosted preview?** Run the
 > **production** build, not `npm run dev`:
@@ -251,6 +266,7 @@ src/
       session/route.ts           Create a session (+ phone link options)
       session/[code]/route.ts    Fetch public session state
       session/[code]/stream/...  SSE relay (answer views subscribe here)
+      session/[code]/updates/... Long-poll fallback for buffering proxies
       answer/route.ts            Generate + stream one answer entry
       vision/route.ts            Read the question off a screenshot
       transcribe/route.ts        Transcribe an audio chunk (Gemini audio)

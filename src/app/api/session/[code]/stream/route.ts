@@ -87,9 +87,9 @@ export async function GET(
     headers: {
       "Content-Type": "text/event-stream; charset=utf-8",
       "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
+      // No hop-by-hop headers (Connection / Content-Encoding): proxies such as
+      // Cloudflare buffer or reject a stream that carries them over HTTP/2.
       "X-Accel-Buffering": "no",
-      "Content-Encoding": "none",
     },
   });
 }
