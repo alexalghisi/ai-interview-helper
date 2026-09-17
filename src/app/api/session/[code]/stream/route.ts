@@ -1,7 +1,19 @@
-import { getSession, subscribe, type ServerEvent } from "@/lib/session-store";
+import {
+  COOKIE_NAME,
+  authRequiredForRequest,
+  cookieFromRequest,
+  verifyToken,
+} from "@/lib/auth";
+import {
+  getSession,
+  subscribe,
+  type SubscriberRole,
+  type ServerEvent,
+} from "@/lib/session-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 3600;
 
 /**
  * SSE relay: a phone (or any viewer) connects here and receives live events
@@ -11,11 +23,22 @@ export async function GET(
   req: Request,
   { params }: { params: Promise<{ code: string }> },
 ) {
+  if (authRequiredForRequest(req)) {
+    const token = cookieFromRequest(req, COOKIE_NAME);
+    if (!(await verifyToken(token))) {
+      return new Response("Unauthorized — sign in first.", { status: 401 });
+    }
+  }
+
   const { code } = await params;
   const session = getSession(code);
   if (!session) {
     return new Response("Session not found", { status: 404 });
   }
+
+  const url = new URL(req.url);
+  const role: SubscriberRole =
+    url.searchParams.get("role") === "control" ? "control" : "phone";
 
   const encoder = new TextEncoder();
 
@@ -27,20 +50,19 @@ export async function GET(
         );
       };
 
-      const unsubscribe = subscribe(code, send);
+      const unsubscribe = subscribe(code, send, role);
       if (!unsubscribe) {
         controller.close();
         return;
       }
 
-      // Keep-alive comment every 20s so proxies don't drop the connection.
       const keepAlive = setInterval(() => {
         try {
           controller.enqueue(encoder.encode(`: keep-alive\n\n`));
         } catch {
           clearInterval(keepAlive);
         }
-      }, 20000);
+      }, 5000);
 
       const close = () => {
         clearInterval(keepAlive);
@@ -62,6 +84,7 @@ export async function GET(
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
       "X-Accel-Buffering": "no",
+      "Content-Encoding": "none",
     },
   });
 }

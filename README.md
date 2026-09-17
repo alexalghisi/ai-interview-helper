@@ -1,13 +1,14 @@
 # AI Interview HelpER
 
 A real-time interview assistant. On your **laptop** you capture your interview
-screen; questions are read by a vision model **or** typed manually; and answers
-are generated in a specific persona and **streamed live to your phone** — never
-onto the screen you share. An interviewer watching your screen-share never sees
-the help.
+screen and/or **listen to the interview audio**; questions are transcribed from
+speech, read by a vision model, **or** typed manually; and answers are generated
+in a specific persona and **streamed live to your phone** — never onto the
+screen you share. An interviewer watching your screen-share never sees the help.
 
-> Built as v1: desktop capture + phone pairing (QR + code), manual and
-> vision-based question capture, live streaming answers with recent Q&A history.
+> Desktop capture + phone pairing (QR + code); manual, vision, and **live-audio**
+> question capture; auto-answer on detected spoken questions; live streaming
+> answers with recent Q&A history.
 
 ## How it works
 
@@ -28,6 +29,38 @@ the help.
   the answer as it streams in, token by token, plus recent history.
 - A desktop→phone **realtime relay** is implemented with Server-Sent Events over
   an in-memory session store (`src/lib/session-store.ts`).
+
+## Question capture modes
+
+Three ways to feed the interviewer's question in — use any combination:
+
+1. **Listen (audio)** — capture the interview audio, transcribe it live with
+   Gemini, detect spoken questions, and auto-generate an answer to your phone.
+   Pick the source: **Tab / system** audio (via `getDisplayMedia` — choose the
+   interview browser tab and tick **"Share tab audio"**) or your **microphone**.
+   A rolling transcript shows on the desktop; the **answer still only goes to
+   the phone**. Toggle **Auto-answer** off to review/edit the detected question
+   before sending.
+2. **Read screen (vision)** — grab a frame and let Gemini read the on-screen
+   question (manual "Read question now" or Auto-read on an interval).
+3. **Manual** — type or paste the question. Always available, always reliable.
+
+### Audio capture constraints (read this)
+
+- **Tab/system audio works best in Chrome** (and Edge) on desktop. In the screen
+  picker choose the **Chrome Tab** running the interview and enable
+  **"Share tab audio"** — that captures the interviewer's voice from the call.
+- **Sharing an entire screen/window generally does NOT include audio** on
+  macOS — only **tab** sharing reliably carries audio. On macOS, full **system**
+  audio isn't exposed to the browser without extra tooling; capturing the
+  **meeting's browser tab** is the reliable path. If you're on the native
+  Zoom/Meet app instead of a tab, use the **Microphone** source with the
+  interviewer on speakers.
+- Firefox/Safari have limited tab-audio support; prefer Chrome.
+- If no audio track is shared or permission is denied, the app shows a clear
+  message and you can fall back to screen reading or manual input.
+- Transcription is chunked (~5s clips) so there's naturally a few seconds of
+  latency between the spoken question and the streamed answer.
 
 ## Persona
 
@@ -87,6 +120,20 @@ machine's LAN IP, e.g. `http://192.168.x.x:47317/s/CODE`.
 
 The dev server binds to port **47317** (uncommon, to avoid conflicts).
 
+> **Sharing the app over a proxy / tunnel / hosted preview?** Run the
+> **production** build, not `npm run dev`:
+>
+> ```bash
+> npm run build && npm start   # serves http://localhost:47317
+> ```
+>
+> `next dev` relies on a Hot-Module-Reload **websocket** (`/_next/hmr`). Some
+> proxied/hosted environments can't upgrade that websocket, and when it fails
+> the Next dev client never finishes hydrating — so pages render but buttons
+> (like **Start session**) appear dead. Production has no HMR websocket and
+> hydrates reliably, so always use `npm start` for anything but local
+> development on `localhost`.
+
 ### Environment variables
 
 | Variable | Purpose | Default |
@@ -94,6 +141,7 @@ The dev server binds to port **47317** (uncommon, to avoid conflicts).
 | `GEMINI_API_KEY` / `GOOGLE_GENERATIVE_AI_API_KEY` | Google Gemini key | none → mock mode |
 | `ANSWER_MODEL` | Answer model | `gemini-3.6-flash` |
 | `VISION_MODEL` | Vision model | `gemini-3.6-flash` |
+| `TRANSCRIBE_MODEL` | Audio transcription model | `gemini-3.6-flash` |
 | `ANSWER_MAX_TOKENS` | Max answer tokens (latency cap) | `512` |
 | `APP_ACCESS_PASSWORD` | Shared login password (gates the whole app) | none → open |
 | `AUTH_SECRET` | Secret used to sign the session cookie | derived from password |
@@ -161,11 +209,15 @@ src/
       session/[code]/stream/...  SSE relay (phone subscribes here)
       answer/route.ts            Generate + stream answer to the phone
       vision/route.ts            Read the question off a screenshot
+      transcribe/route.ts        Transcribe an audio chunk (Gemini audio)
+  hooks/
+    use-audio-transcription.ts   Capture + chunk + transcribe + detect question
   lib/
     auth.ts                      Signed-cookie access gate helpers
     session-store.ts             In-memory sessions + broadcast
-    generate.ts                  Gemini + mock answer/vision engine
-    persona.ts                   Persona + vision system prompts
+    generate.ts                  Gemini + mock answer/vision/transcribe engine
+    persona.ts                   Persona + vision + transcribe system prompts
+    detect-question.ts           Heuristic spoken-question detection
     events.ts                    Shared client-safe types
   components/
     qr-code.tsx                  QR renderer
