@@ -37,8 +37,13 @@ export async function GET(
   }
 
   const url = new URL(req.url);
+  const requestedRole = url.searchParams.get("role");
   const role: SubscriberRole =
-    url.searchParams.get("role") === "control" ? "control" : "phone";
+    requestedRole === "control"
+      ? "control"
+      : requestedRole === "viewer"
+        ? "viewer"
+        : "phone";
 
   const encoder = new TextEncoder();
 
