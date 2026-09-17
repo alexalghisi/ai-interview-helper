@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { detectQuestion, normalizeQuestion } from "@/lib/detect-question";
+import { detectQuestion, isSameQuestion } from "@/lib/detect-question";
 import {
   INSECURE_MEDIA_MESSAGE,
   isInsecureMediaContext,
@@ -68,7 +68,9 @@ export function useAudioTranscription({
   const listeningRef = useRef(false);
   const mimeRef = useRef<string>("audio/webm");
   const recordCycleRef = useRef<() => void>(() => {});
+  const transcriptRef = useRef("");
   const lastQuestionRef = useRef<string>("");
+  const lastQuestionAtRef = useRef(0);
   const onQuestionRef = useRef(onQuestion);
   const codeRef = useRef(code);
   useEffect(() => {
@@ -94,6 +96,9 @@ export function useAudioTranscription({
 
   const transcribeBlob = useCallback(
     async (blob: Blob) => {
+      // Stop means stop: the chunk that was mid-recording must not still
+      // transcribe and fire an answer after the user hit the button.
+      if (!listeningRef.current) return;
       if (!codeRef.current || blob.size < 400) return;
       try {
         const audio = await blobToBase64(blob);
@@ -110,17 +115,22 @@ export function useAudioTranscription({
         setError(null);
         setSupported(Boolean(data.supported));
         const text: string = (data.text || "").trim();
-        if (!text) return;
+        if (!text || !listeningRef.current) return;
 
-        setTranscript((prev) => {
-          const next = (prev ? `${prev} ${text}` : text).slice(-4000);
-          const q = detectQuestion(text) || detectQuestion(next);
-          if (q && normalizeQuestion(q) !== normalizeQuestion(lastQuestionRef.current)) {
-            lastQuestionRef.current = q;
-            onQuestionRef.current(q);
-          }
-          return next;
-        });
+        const prev = transcriptRef.current;
+        const next = (prev ? `${prev} ${text}` : text).slice(-4000);
+        transcriptRef.current = next;
+        setTranscript(next);
+
+        const q = detectQuestion(text) || detectQuestion(next);
+        if (!q) return;
+        // One spoken question must yield one answer: the rolling transcript
+        // keeps re-emitting it with a word more or less each chunk.
+        const recent = Date.now() - lastQuestionAtRef.current < 25_000;
+        if (recent && isSameQuestion(q, lastQuestionRef.current)) return;
+        lastQuestionRef.current = q;
+        lastQuestionAtRef.current = Date.now();
+        onQuestionRef.current(q);
       } catch {
         /* transient — keep listening */
       }
@@ -172,6 +182,7 @@ export function useAudioTranscription({
       streamRef.current = stream;
       mimeRef.current = pickMimeType();
       lastQuestionRef.current = "";
+      lastQuestionAtRef.current = 0;
       listeningRef.current = true;
       setSource(src);
       setListening(true);
@@ -261,7 +272,10 @@ export function useAudioTranscription({
 
   useEffect(() => () => stop(), [stop]);
 
-  const clearTranscript = useCallback(() => setTranscript(""), []);
+  const clearTranscript = useCallback(() => {
+    transcriptRef.current = "";
+    setTranscript("");
+  }, []);
 
   return {
     listening,

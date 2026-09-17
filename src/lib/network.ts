@@ -68,6 +68,53 @@ function isUsablePhoneOrigin(value: string): boolean {
   }
 }
 
+export type PhoneOriginOption = {
+  label: string;
+  value: string;
+  hint: string;
+};
+
+/**
+ * Every origin the phone could reasonably use, so the control page can offer a
+ * choice instead of betting on one. A configured public origin (tunnel) is
+ * useless once the tunnel dies — the LAN address usually still works.
+ */
+export function getPhoneOriginOptions(req: Request): PhoneOriginOption[] {
+  const options: PhoneOriginOption[] = [];
+  const seen = new Set<string>();
+  const add = (label: string, value: string | null, hint: string) => {
+    if (!value || !isUsablePhoneOrigin(value)) return;
+    const clean = value.replace(/\/$/, "");
+    if (seen.has(clean)) return;
+    seen.add(clean);
+    options.push({ label, value: clean, hint });
+  };
+
+  const url = new URL(req.url);
+  const hostHeader =
+    req.headers.get("x-forwarded-host") || req.headers.get("host") || url.host;
+  const hostname = hostHeader.split(":")[0].replace(/^\[|\]$/g, "");
+  const forwarded = req.headers.get("x-forwarded-proto");
+  const proto = forwarded
+    ? forwarded.split(",")[0].trim()
+    : url.protocol.replace(":", "");
+  const port = hostPort(hostHeader, url.port || process.env.PORT || "47317");
+
+  add(
+    "Public",
+    process.env.PHONE_PUBLIC_ORIGIN?.trim() ?? null,
+    "PHONE_PUBLIC_ORIGIN — works anywhere while the tunnel is up",
+  );
+  if (!isLoopbackHost(hostname)) {
+    add("This host", `${proto}://${hostHeader}`, "The address you opened");
+  }
+  const lan = firstPrivateIPv4();
+  if (lan) {
+    add("Wi-Fi", `http://${lan}:${port}`, "Same Wi-Fi network as this laptop");
+  }
+  return options;
+}
+
 export function getPhoneOrigin(req: Request): string {
   const override = process.env.PHONE_PUBLIC_ORIGIN?.trim().replace(/\/$/, "");
   if (override && isUsablePhoneOrigin(override)) return override;

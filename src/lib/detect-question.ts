@@ -57,3 +57,23 @@ export function detectQuestion(text: string): string | null {
 export function normalizeQuestion(q: string): string {
   return q.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
+
+/**
+ * A rolling transcript re-emits the same question with a few words more or
+ * fewer each chunk. Treat those as the same question so one spoken question
+ * produces one answer instead of a flood of near-duplicates.
+ */
+export function isSameQuestion(a: string, b: string): boolean {
+  const x = normalizeQuestion(a);
+  const y = normalizeQuestion(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  if (x.includes(y) || y.includes(x)) return true;
+
+  const xs = new Set(x.split(" ").filter((w) => w.length > 3));
+  const ys = new Set(y.split(" ").filter((w) => w.length > 3));
+  if (xs.size === 0 || ys.size === 0) return false;
+  let shared = 0;
+  for (const w of xs) if (ys.has(w)) shared += 1;
+  return shared / Math.min(xs.size, ys.size) >= 0.7;
+}
