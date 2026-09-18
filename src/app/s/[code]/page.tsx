@@ -1,16 +1,19 @@
-import { getPublicState } from "@/lib/session-store";
-import { PhoneView } from "./phone-view";
+"use client";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+import { useParams } from "next/navigation";
+import { AnswerFeed } from "@/components/answer-feed";
 
-export default async function PhonePage({
-  params,
-}: {
-  params: Promise<{ code: string }>;
-}) {
-  const { code } = await params;
-  const normalized = (code ?? "").toUpperCase();
-  const initial = normalized ? (getPublicState(normalized) ?? null) : null;
-  return <PhoneView code={normalized} initial={initial} />;
+/**
+ * Answer view. Works the same on a phone (scan the QR) and in a second browser
+ * window on the laptop — both subscribe to the very same live relay.
+ */
+export default function AnswerPage() {
+  const params = useParams<{ code: string }>();
+  const code = (params?.code ?? "").toUpperCase();
+
+  return (
+    <div className="min-h-dvh pt-2">
+      <AnswerFeed code={code} role="phone" />
+    </div>
+  );
 }

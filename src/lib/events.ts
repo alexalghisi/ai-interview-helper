@@ -8,29 +8,40 @@ export type SessionStatus =
   | "done"
   | "error";
 
+/**
+ * One question and its answer. Entries are append-only: a new question never
+ * overwrites a previous entry, so a reader can finish an older answer while the
+ * next one streams in.
+ */
 export type QAEntry = {
   id: string;
   question: string;
   answer: string;
   ts: number;
+  done: boolean;
+  error?: string;
 };
 
 export type PublicState = {
   code: string;
   status: SessionStatus;
-  question: string;
-  answer: string;
-  history: QAEntry[];
+  /** Newest first. Answers are stripped for the control (desktop) role. */
+  entries: QAEntry[];
   connectedPhones: number;
+  connectedViewers: number;
   updatedAt: number;
+  /** Bumped on every change — the cursor long-polling clients wait on. */
+  version: number;
 };
 
 export type ServerEvent =
   | { type: "state"; state: PublicState }
-  | { type: "delta"; text: string }
-  | { type: "status"; status: SessionStatus }
-  | { type: "answer_start"; question: string }
+  | { type: "answer_start"; entry: QAEntry }
+  | { type: "delta"; id: string; text: string }
   | { type: "answer_end"; entry: QAEntry }
+  | { type: "answer_error"; id: string; message: string }
+  | { type: "status"; status: SessionStatus }
+  | { type: "phones"; connectedPhones: number; connectedViewers: number }
   | { type: "ping" };
 
 export const STATUS_LABEL: Record<SessionStatus, string> = {

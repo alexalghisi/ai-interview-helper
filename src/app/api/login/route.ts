@@ -6,6 +6,7 @@ import {
   createToken,
   isAuthConfigured,
 } from "@/lib/auth";
+import { requestIsHttps } from "@/lib/network";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,7 +36,8 @@ export async function POST(req: Request) {
   res.cookies.set(COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    // NODE_ENV=production is not enough: LAN HTTP (phone) cannot store Secure cookies.
+    secure: requestIsHttps(req),
     path: "/",
     maxAge: COOKIE_MAX_AGE_S,
   });

@@ -4,7 +4,7 @@ import { hasModelKey, readQuestionFromImage } from "@/lib/generate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 /**
  * Desktop sends a captured frame (data URL). We ask a vision model to read the
@@ -49,8 +49,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ question, supported: true });
   } catch (err) {
     setStatus(code, "idle");
-    const message =
-      err instanceof Error ? err.message : "Vision request failed";
+    const raw = err instanceof Error ? err.message : "Vision request failed";
+    console.error("[vision]", raw);
+    const message = /quota|rate-limit|429/i.test(raw)
+      ? "Gemini rate limit — wait ~1 min, then Read question now."
+      : raw;
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

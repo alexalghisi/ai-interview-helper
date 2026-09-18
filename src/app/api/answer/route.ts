@@ -13,9 +13,12 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
- * Desktop triggers answer generation here. The answer is streamed to the phone
- * via the session relay and stored in history. It is intentionally NOT returned
- * to the desktop caller — answers must never appear on the captured screen.
+ * Desktop triggers answer generation here. Each question gets its own entry, so
+ * a second question never overwrites the answer someone is still reading; both
+ * stream to the answer views in parallel and stay in the feed afterwards.
+ *
+ * The answer text is intentionally NOT returned to the desktop caller — it must
+ * never appear on the captured screen.
  */
 export async function POST(req: Request) {
   let body: { code?: string; question?: string };
@@ -40,18 +43,27 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
 
-  startAnswer(code, question);
+  const id = startAnswer(code, question);
+  if (!id) {
+    return NextResponse.json({ error: "Session not found" }, { status: 404 });
+  }
 
   try {
     for await (const delta of streamAnswer(question)) {
-      appendDelta(code, delta);
+      if (!appendDelta(code, id, delta)) {
+        // Entry was dropped (session reset) — stop burning tokens.
+        return NextResponse.json({ ok: true, id, aborted: true });
+      }
     }
-    const entry = finishAnswer(code);
+    const entry = finishAnswer(code, id);
     return NextResponse.json({ ok: true, id: entry?.id });
   } catch (err) {
-    const message =
+    const raw =
       err instanceof Error ? err.message : "Failed to generate answer";
-    failAnswer(code, message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    const message = /quota|rate-limit|429/i.test(raw)
+      ? "Gemini rate limit — wait ~1 min, then send the question again."
+      : raw;
+    failAnswer(code, id, message);
+    return NextResponse.json({ error: message, id }, { status: 500 });
   }
 }
