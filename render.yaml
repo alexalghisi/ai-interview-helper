@@ -1,0 +1,42 @@
+# Render Blueprint — one free Node web service.
+#
+# Sessions are in-memory and the desktop→phone relay uses SSE over one process,
+# so this must stay a single instance. Render's Free web plan does not require
+# a credit card; without a card, overage suspends the service instead of billing.
+#
+# Native Node (not Docker): Render's Docker runtime is a paid path. The
+# existing Dockerfile remains for Fly / other container hosts.
+#
+# Free-instance tradeoff: spins down after ~15 minutes idle. SSE connections
+# drop and in-memory sessions reset on wake (disk is ephemeral too). Documented
+# in the README.
+#
+# Secrets are NOT in this file. Set GEMINI_API_KEY / APP_ACCESS_PASSWORD in the
+# dashboard (sync: false prompts you). After the first deploy, set
+# PHONE_PUBLIC_ORIGIN to the https://*.onrender.com URL shown there.
+
+services:
+  - type: web
+    name: ai-interview-helper
+    runtime: node
+    plan: free
+    numInstances: 1
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: HOSTNAME
+        value: "0.0.0.0"
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GOOGLE_GENERATIVE_AI_API_KEY
+        sync: false
+      - key: APP_ACCESS_PASSWORD
+        sync: false
+      - key: AUTH_SECRET
+        generateValue: true
+      - key: PHONE_PUBLIC_ORIGIN
+        sync: false

@@ -11,11 +11,13 @@ function isLoopbackHost(hostname: string): boolean {
   );
 }
 
-function isFlyRuntime(): boolean {
+function isHostedRuntime(): boolean {
   return Boolean(
     process.env.FLY_APP_NAME ||
       process.env.FLY_MACHINE_ID ||
-      process.env.FLY_ALLOC_ID,
+      process.env.FLY_ALLOC_ID ||
+      process.env.RENDER ||
+      process.env.RENDER_SERVICE_ID,
   );
 }
 
@@ -31,15 +33,17 @@ function hostName(hostHeader: string): string {
   return hostHeader.replace(/^\[|\]$/g, "");
 }
 
-function isFlyPrivateHost(hostname: string): boolean {
+function isHostedPrivateHost(hostname: string): boolean {
   const host = hostname.replace(/^\[|\]$/g, "");
   if (host.toLowerCase().startsWith("fdaa:")) return true;
-  return isFlyRuntime() && isPrivateIPv4(host);
+  return isHostedRuntime() && isPrivateIPv4(host);
 }
 
 function configuredPublicOrigin(): string | null {
   const override = process.env.PHONE_PUBLIC_ORIGIN?.trim().replace(/\/$/, "");
   if (override && isUsablePhoneOrigin(override)) return override;
+  const renderUrl = process.env.RENDER_EXTERNAL_URL?.trim().replace(/\/$/, "");
+  if (renderUrl && isUsablePhoneOrigin(renderUrl)) return renderUrl;
   const app = process.env.FLY_APP_NAME?.trim();
   if (app) {
     const origin = `https://${app}.fly.dev`;
@@ -113,7 +117,7 @@ function isUsablePhoneOrigin(value: string): boolean {
     if (!u.protocol.startsWith("http")) return false;
     if (isLoopbackHost(u.hostname)) return false;
     if (u.hostname === "0.0.0.0") return false;
-    if (isFlyPrivateHost(u.hostname)) return false;
+    if (isHostedPrivateHost(u.hostname)) return false;
     return Boolean(u.hostname);
   } catch {
     return false;
@@ -147,13 +151,13 @@ export function getPhoneOriginOptions(req: Request): PhoneOriginOption[] {
   add(
     "Public",
     configuredPublicOrigin(),
-    "PHONE_PUBLIC_ORIGIN — public https origin (Fly / tunnel)",
+    "PHONE_PUBLIC_ORIGIN — public https origin (hosted / tunnel)",
   );
   if (!isLoopbackHost(hostname)) {
     add("This host", `${proto}://${hostHeader}`, "The address you opened");
   }
   const lan = firstPrivateIPv4();
-  if (lan && isLoopbackHost(hostname) && !isFlyRuntime()) {
+  if (lan && isLoopbackHost(hostname) && !isHostedRuntime()) {
     add("Wi-Fi", `http://${lan}:${port}`, "Same Wi-Fi network as this laptop");
   }
   return options;
@@ -166,7 +170,7 @@ export function getPhoneOrigin(req: Request): string {
   if (!isLoopbackHost(hostname) && isUsablePhoneOrigin(requestOrigin)) {
     return requestOrigin;
   }
-  if (isLoopbackHost(hostname) && !isFlyRuntime()) {
+  if (isLoopbackHost(hostname) && !isHostedRuntime()) {
     const lan = firstPrivateIPv4();
     if (lan) {
       const lanOrigin = `http://${lan}:${port}`;
