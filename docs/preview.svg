@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 560" width="960" height="560" role="img" style="letter-spacing:normal">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 560" width="960" height="560" role="img">
 <title>Control on the laptop, live answers on the phone</title>
 <defs>
 <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
@@ -22,7 +22,7 @@
 <clipPath id="q2l1"><rect x="656" y="362" width="0" height="20"><animate attributeName="width" values="0;0;248;248;0" keyTimes="0;0.74;0.81;0.97;1" dur="11s" repeatCount="indefinite"/></rect></clipPath>
 <clipPath id="q2l2"><rect x="656" y="380" width="0" height="20"><animate attributeName="width" values="0;0;248;248;0" keyTimes="0;0.81;0.87;0.97;1" dur="11s" repeatCount="indefinite"/></rect></clipPath>
 <clipPath id="q2l3"><rect x="656" y="398" width="0" height="20"><animate attributeName="width" values="0;0;248;248;0" keyTimes="0;0.87;0.93;0.97;1" dur="11s" repeatCount="indefinite"/></rect></clipPath>
-<clipPath id="q2l4"><rect x="656" y="416" width="0" height="20"><animate attributeName="width" values="0;0;150;150;0" keyTimes="0;0.93;0.96;0.97;1" dur="11s" repeatCount="indefinite"/></rect></clipPath>
+<clipPath id="q2l4"><rect x="656" y="416" width="0" height="20"><animate attributeName="width" values="0;0;220;220;0" keyTimes="0;0.93;0.96;0.97;1" dur="11s" repeatCount="indefinite"/></rect></clipPath>
 </defs>
 <rect width="960" height="560" fill="url(#bg)"/>
 <rect width="960" height="560" fill="url(#glowP)"/>
@@ -45,7 +45,7 @@
 <rect x="388" y="100" width="192" height="20" rx="10" fill="#1a2433" stroke="#2a3548"/>
 <circle cx="402" cy="110" r="3.2" fill="#2db873"/>
 <text x="410" y="114" fill="#c5d0dc" font-size="8.5" font-family="ui-sans-serif,system-ui,sans-serif">Nothing is answered on this page</text>
-<g>
+<g opacity="1">
 <animate attributeName="opacity" values="1;1;0;0;1" keyTimes="0;0.155;0.185;0.975;1" dur="11s" repeatCount="indefinite"/>
 <rect x="110" y="166" width="400" height="328" rx="14" fill="#0d1624" stroke="#2a3548"/>
 <rect x="281" y="194" width="48" height="48" rx="12" fill="#1fd5f9" fill-opacity="0.10" stroke="#1fd5f9" stroke-opacity="0.35"/>
@@ -76,16 +76,16 @@
 <text x="406" y="384" fill="#c5d0dc" font-size="9" font-family="ui-sans-serif,system-ui,sans-serif">Read on phone</text>
 <text x="406" y="398" fill="#6d7c91" font-size="8" font-family="ui-sans-serif,system-ui,sans-serif">cards append</text>
 </g>
-<g>
+<g opacity="0">
 <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.175;0.205;0.975;1" dur="11s" repeatCount="indefinite"/>
 <rect x="36" y="136" width="320" height="200" rx="12" fill="#0d1624" stroke="#2a3548"/>
 <text x="48" y="156" fill="#e8eef6" font-size="11" font-family="ui-sans-serif,system-ui,sans-serif" font-weight="600">Window capture</text>
-<g>
+<g opacity="1">
 <animate attributeName="opacity" values="1;1;0;0;1" keyTimes="0;0.30;0.33;0.975;1" dur="11s" repeatCount="indefinite"/>
 <rect x="270" y="144" width="72" height="16" rx="8" fill="#1a2433"/>
 <text x="306" y="155" text-anchor="middle" fill="#8b9aaf" font-size="8" font-family="ui-sans-serif,system-ui,sans-serif">Ready</text>
 </g>
-<g>
+<g opacity="0">
 <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.30;0.33;0.975;1" dur="11s" repeatCount="indefinite"/>
 <rect x="246" y="144" width="98" height="16" rx="8" fill="#1fd5f9" fill-opacity="0.12" stroke="#1fd5f9" stroke-opacity="0.4"/>
 <circle cx="256" cy="152" r="3" fill="#1fd5f9">
@@ -97,19 +97,30 @@
 <g clip-path="url(#meetClip)">
 <rect x="44" y="166" width="304" height="18" fill="#121820"/>
 <circle cx="54" cy="175" r="3" fill="#e54848"/>
-<text x="64" y="179" fill="#8b9aaf" font-size="8" font-family="ui-sans-serif,system-ui,sans-serif">meet.google.com/k7m-2px-int</text>
-<rect x="52" y="192" width="138" height="74" rx="8" fill="#161d2a"/>
-<ellipse cx="121" cy="248" rx="28" ry="14" fill="#3d4a63"/>
-<circle cx="121" cy="216" r="12" fill="#c9b09a"/>
-<rect x="109" y="226" width="24" height="8" rx="3" fill="#c9b09a"/>
-<text x="121" y="258" text-anchor="middle" fill="#c5d0dc" font-size="8" font-family="ui-sans-serif,system-ui,sans-serif">Maya · interviewer</text>
-<rect x="198" y="192" width="138" height="74" rx="8" fill="#161d2a"/>
-<ellipse cx="267" cy="248" rx="28" ry="14" fill="#2f3d5c"/>
-<circle cx="267" cy="216" r="12" fill="#8f9bb3"/>
-<rect x="255" y="226" width="24" height="8" rx="3" fill="#8f9bb3"/>
-<text x="267" y="258" text-anchor="middle" fill="#8b9aaf" font-size="8" font-family="ui-sans-serif,system-ui,sans-serif">You · mic muted</text>
+<text x="64" y="179" fill="#8b9aaf" font-size="8" font-family="ui-sans-serif,system-ui,sans-serif">Google Meet — Interview</text>
+<rect x="274" y="170" width="66" height="11" rx="5" fill="#e54848" fill-opacity="0.18"/>
+<circle cx="281" cy="175.5" r="2" fill="#e54848">
+<animate attributeName="opacity" values="1;0.3;1" dur="1s" repeatCount="indefinite"/>
+</circle>
+<text x="287" y="179" fill="#f4a0a0" font-size="7" font-family="ui-sans-serif,system-ui,sans-serif">Capturing</text>
+<rect x="52" y="192" width="288" height="92" rx="8" fill="#101826"/>
+<text x="64" y="210" fill="#6d7c91" font-size="8" font-family="ui-sans-serif,system-ui,sans-serif">Live captions</text>
+<g opacity="1">
+<animate attributeName="opacity" values="1;1;0;0;1" keyTimes="0;0.33;0.36;0.975;1" dur="11s" repeatCount="indefinite"/>
+<text x="64" y="232" fill="#5c6b80" font-size="10" font-family="ui-sans-serif,system-ui,sans-serif">Waiting for speech…</text>
 </g>
-<g>
+<g opacity="0">
+<animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.33;0.36;0.66;0.69;1" dur="11s" repeatCount="indefinite"/>
+<text x="64" y="230" fill="#e8eef6" font-size="10.5" font-family="ui-sans-serif,system-ui,sans-serif">Tell me about a time you shipped an</text>
+<text x="64" y="246" fill="#e8eef6" font-size="10.5" font-family="ui-sans-serif,system-ui,sans-serif">LLM feature in production.</text>
+</g>
+<g opacity="0">
+<animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.67;0.70;0.975;1" dur="11s" repeatCount="indefinite"/>
+<text x="64" y="230" fill="#e8eef6" font-size="10.5" font-family="ui-sans-serif,system-ui,sans-serif">How would you debug a p99 spike on</text>
+<text x="64" y="246" fill="#e8eef6" font-size="10.5" font-family="ui-sans-serif,system-ui,sans-serif">our checkout API?</text>
+</g>
+</g>
+<g opacity="0">
 <animate attributeName="opacity" values="0;0;1;1;0;0;1;1;0" keyTimes="0;0.33;0.36;0.62;0.65;0.68;0.71;0.975;1" dur="11s" repeatCount="indefinite"/>
 <rect x="52" y="268" width="14" height="14" rx="3" fill="#e54848" fill-opacity="0.25"/>
 <circle cx="59" cy="275" r="3" fill="#e54848">
@@ -121,30 +132,30 @@
 <rect x="36" y="346" width="320" height="170" rx="12" fill="#0d1624" stroke="#2a3548"/>
 <text x="48" y="366" fill="#e8eef6" font-size="11" font-family="ui-sans-serif,system-ui,sans-serif" font-weight="600">Question to answer</text>
 <rect x="48" y="376" width="296" height="58" rx="8" fill="#0a1018" stroke="#2a3548"/>
-<g>
+<g opacity="1">
 <animate attributeName="opacity" values="1;1;0;0;1" keyTimes="0;0.33;0.36;0.975;1" dur="11s" repeatCount="indefinite"/>
 <text x="58" y="400" fill="#5c6b80" font-size="10" font-family="ui-sans-serif,system-ui,sans-serif">Type, paste, or wait for a spoken question…</text>
 </g>
-<g>
+<g opacity="0">
 <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.33;0.36;0.66;0.69;1" dur="11s" repeatCount="indefinite"/>
 <text x="58" y="396" fill="#e8eef6" font-size="10.5" font-family="ui-sans-serif,system-ui,sans-serif">Tell me about a time you shipped an</text>
 <text x="58" y="412" fill="#e8eef6" font-size="10.5" font-family="ui-sans-serif,system-ui,sans-serif">LLM feature in production.</text>
 </g>
-<g>
+<g opacity="0">
 <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.67;0.70;0.975;1" dur="11s" repeatCount="indefinite"/>
 <text x="58" y="396" fill="#e8eef6" font-size="10.5" font-family="ui-sans-serif,system-ui,sans-serif">How would you debug a p99 spike on</text>
 <text x="58" y="412" fill="#e8eef6" font-size="10.5" font-family="ui-sans-serif,system-ui,sans-serif">our checkout API?</text>
 </g>
 <rect x="228" y="444" width="116" height="24" rx="7" fill="#8852e0"/>
 <text x="286" y="460" text-anchor="middle" fill="#f4f7fb" font-size="9.5" font-family="ui-sans-serif,system-ui,sans-serif" font-weight="600">Generate answer</text>
-<g>
+<g opacity="0">
 <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.37;0.40;0.975;1" dur="11s" repeatCount="indefinite"/>
 <text x="48" y="460" fill="#6d7c91" font-size="8.5" font-family="ui-sans-serif,system-ui,sans-serif">Last question sent</text>
-<g>
+<g opacity="0">
 <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.37;0.40;0.66;0.69;1" dur="11s" repeatCount="indefinite"/>
 <text x="48" y="474" fill="#c5d0dc" font-size="8.5" font-family="ui-sans-serif,system-ui,sans-serif">Shipped an LLM feature…</text>
 </g>
-<g>
+<g opacity="0">
 <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.69;0.72;0.975;1" dur="11s" repeatCount="indefinite"/>
 <text x="48" y="474" fill="#c5d0dc" font-size="8.5" font-family="ui-sans-serif,system-ui,sans-serif">Debug a p99 spike…</text>
 </g>
@@ -163,13 +174,13 @@
 <tspan x="429" y="352">K</tspan><tspan x="451" y="352">7</tspan><tspan x="473" y="352">M</tspan><tspan x="495" y="352">2</tspan><tspan x="517" y="352">P</tspan>
 </text>
 <rect x="380" y="366" width="186" height="26" rx="7" fill="#141c2b" stroke="#2a3548"/>
-<text x="390" y="383" fill="#6d7c91" font-size="8.5" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">192.168.1.24/s/K7M2P</text>
-<g>
+<text x="390" y="383" fill="#6d7c91" font-size="8" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">192.168.1.24:47317/s/K7M2P</text>
+<g opacity="1">
 <animate attributeName="opacity" values="1;1;0;0;1" keyTimes="0;0.25;0.28;0.975;1" dur="11s" repeatCount="indefinite"/>
 <circle cx="392" cy="414" r="3.2" fill="#5c6b80"/>
 <text x="402" y="418" fill="#8b9aaf" font-size="10" font-family="ui-sans-serif,system-ui,sans-serif">Waiting for your phone…</text>
 </g>
-<g>
+<g opacity="0">
 <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.25;0.28;0.975;1" dur="11s" repeatCount="indefinite"/>
 <circle cx="392" cy="414" r="3.2" fill="#2db873">
 <animate attributeName="opacity" values="1;0.4;1" dur="1.4s" repeatCount="indefinite"/>
@@ -179,7 +190,7 @@
 <text x="380" y="446" fill="#6d7c91" font-size="9.5" font-family="ui-sans-serif,system-ui,sans-serif">This page stays answer-free,</text>
 <text x="380" y="460" fill="#6d7c91" font-size="9.5" font-family="ui-sans-serif,system-ui,sans-serif">so it is safe to screen-share.</text>
 <rect x="378" y="474" width="190" height="30" rx="8" fill="#12201c" stroke="#2db873" stroke-opacity="0.28"/>
-<text x="473" y="493" text-anchor="middle" fill="#7dcea0" font-size="9" font-family="ui-sans-serif,system-ui,sans-serif" font-weight="600">Answers wait on the phone</text>
+<text x="473" y="493" text-anchor="middle" fill="#7dcea0" font-size="9" font-family="ui-sans-serif,system-ui,sans-serif" font-weight="600">Answers wait for you</text>
 </g>
 </g>
 <g>
@@ -194,62 +205,62 @@
 </text>
 <rect x="798" y="94" width="48" height="18" rx="9" fill="#1a2433" stroke="#2a3548"/>
 <text x="822" y="106" text-anchor="middle" fill="#8b9aaf" font-size="8" font-family="ui-sans-serif,system-ui,sans-serif">Follow</text>
-<g>
+<g opacity="1">
 <animate attributeName="opacity" values="1;1;0;0;1" keyTimes="0;0.24;0.27;0.975;1" dur="11s" repeatCount="indefinite"/>
 <rect x="852" y="94" width="28" height="18" rx="9" fill="#1a2433"/>
 <text x="866" y="106" text-anchor="middle" fill="#8b9aaf" font-size="8" font-family="ui-sans-serif,system-ui,sans-serif">…</text>
 </g>
-<g>
+<g opacity="0">
 <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.24;0.27;0.975;1" dur="11s" repeatCount="indefinite"/>
 <rect x="852" y="94" width="36" height="18" rx="9" fill="#163528"/>
 <text x="870" y="106" text-anchor="middle" fill="#2db873" font-size="8" font-family="ui-sans-serif,system-ui,sans-serif" font-weight="600">Live</text>
 </g>
-<g>
+<g opacity="1">
 <animate attributeName="opacity" values="1;1;0;0;1" keyTimes="0;0.40;0.43;0.975;1" dur="11s" repeatCount="indefinite"/>
 <rect x="648" y="210" width="260" height="128" rx="14" fill="none" stroke="#2a3548" stroke-dasharray="5 4"/>
 <path transform="translate(778 248)" fill="#5c6b80" d="M0-7C.6-1 1-.6 7 0C1 .6.6 1 0 7C-.6 1-1 .6-7 0C-1-.6-.6-1 0-7Z"/>
 <text x="778" y="278" text-anchor="middle" fill="#8b9aaf" font-size="11" font-family="ui-sans-serif,system-ui,sans-serif">Answers appear here, live —</text>
 <text x="778" y="294" text-anchor="middle" fill="#8b9aaf" font-size="11" font-family="ui-sans-serif,system-ui,sans-serif">one card per question.</text>
 </g>
-<g>
+<g opacity="0">
 <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.40;0.43;0.975;1" dur="11s" repeatCount="indefinite"/>
 <rect x="644" y="132" width="268" height="154" rx="14" fill="#0d1624" stroke="#1fd5f9" stroke-opacity="0.22"/>
 <text x="656" y="150" fill="#6d7c91" font-size="8" font-family="ui-sans-serif,system-ui,sans-serif">#1</text>
 <text x="674" y="150" fill="#e8eef6" font-size="10.5" font-family="ui-sans-serif,system-ui,sans-serif" font-weight="600">Tell me about a time you shipped</text>
 <text x="674" y="164" fill="#e8eef6" font-size="10.5" font-family="ui-sans-serif,system-ui,sans-serif" font-weight="600">an LLM feature in production.</text>
-<g>
+<g opacity="1">
 <animate attributeName="opacity" values="1;1;0;0;1" keyTimes="0;0.42;0.45;0.975;1" dur="11s" repeatCount="indefinite"/>
 <text x="656" y="196" fill="#8b9aaf" font-size="11" font-family="ui-sans-serif,system-ui,sans-serif">Composing your answer…</text>
 </g>
-<text x="656" y="196" fill="#e8eef6" font-size="11.5" font-family="ui-sans-serif,system-ui,sans-serif" clip-path="url(#q1l1)">I owned our first RAG search.</text>
-<text x="656" y="214" fill="#e8eef6" font-size="11.5" font-family="ui-sans-serif,system-ui,sans-serif" clip-path="url(#q1l2)">I put evals on 40 real tickets,</text>
-<text x="656" y="232" fill="#e8eef6" font-size="11.5" font-family="ui-sans-serif,system-ui,sans-serif" clip-path="url(#q1l3)">shipped behind a flag, and watched</text>
-<text x="656" y="250" fill="#e8eef6" font-size="11.5" font-family="ui-sans-serif,system-ui,sans-serif" clip-path="url(#q1l4)">retrieval quality before opening it.</text>
+<text x="656" y="196" fill="#e8eef6" font-size="11.5" font-family="ui-sans-serif,system-ui,sans-serif" clip-path="url(#q1l1)">At Complaion I shipped document</text>
+<text x="656" y="214" fill="#e8eef6" font-size="11.5" font-family="ui-sans-serif,system-ui,sans-serif" clip-path="url(#q1l2)">understanding with JSON schemas.</text>
+<text x="656" y="232" fill="#e8eef6" font-size="11.5" font-family="ui-sans-serif,system-ui,sans-serif" clip-path="url(#q1l3)">Evals gated every release so we</text>
+<text x="656" y="250" fill="#e8eef6" font-size="11.5" font-family="ui-sans-serif,system-ui,sans-serif" clip-path="url(#q1l4)">didn't hallucinate on the record.</text>
 <rect x="848" y="240" width="6" height="12" rx="1" fill="#1fd5f9">
 <animate attributeName="opacity" values="0;0;1;0;1;0;1;0;0" keyTimes="0;0.42;0.43;0.50;0.51;0.60;0.61;0.71;1" dur="11s" repeatCount="indefinite"/>
 </rect>
 </g>
-<g>
+<g opacity="0">
 <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.70;0.73;0.975;1" dur="11s" repeatCount="indefinite"/>
 <rect x="644" y="298" width="268" height="168" rx="14" fill="#0d1624" stroke="#1fd5f9" stroke-opacity="0.30"/>
 <text x="656" y="316" fill="#6d7c91" font-size="8" font-family="ui-sans-serif,system-ui,sans-serif">#2</text>
 <text x="674" y="316" fill="#e8eef6" font-size="10.5" font-family="ui-sans-serif,system-ui,sans-serif" font-weight="600">How would you debug a p99 spike</text>
 <text x="674" y="330" fill="#e8eef6" font-size="10.5" font-family="ui-sans-serif,system-ui,sans-serif" font-weight="600">on our checkout API?</text>
-<g>
+<g opacity="1">
 <animate attributeName="opacity" values="1;1;0;0;1" keyTimes="0;0.74;0.76;0.975;1" dur="11s" repeatCount="indefinite"/>
 <text x="656" y="362" fill="#8b9aaf" font-size="11" font-family="ui-sans-serif,system-ui,sans-serif">Composing your answer…</text>
 </g>
-<text x="656" y="376" fill="#e8eef6" font-size="11.5" font-family="ui-sans-serif,system-ui,sans-serif" clip-path="url(#q2l1)">I would pull the p99 trace first,</text>
-<text x="656" y="394" fill="#e8eef6" font-size="11.5" font-family="ui-sans-serif,system-ui,sans-serif" clip-path="url(#q2l2)">check the query plan and lock waits,</text>
-<text x="656" y="412" fill="#e8eef6" font-size="11.5" font-family="ui-sans-serif,system-ui,sans-serif" clip-path="url(#q2l3)">then span the hot path so we know</text>
-<text x="656" y="430" fill="#e8eef6" font-size="11.5" font-family="ui-sans-serif,system-ui,sans-serif" clip-path="url(#q2l4)">if it is I/O or a retry storm.</text>
+<text x="656" y="376" fill="#e8eef6" font-size="11.5" font-family="ui-sans-serif,system-ui,sans-serif" clip-path="url(#q2l1)">I'd start with the p99 trace and</text>
+<text x="656" y="394" fill="#e8eef6" font-size="11.5" font-family="ui-sans-serif,system-ui,sans-serif" clip-path="url(#q2l2)">the lock waits — same playbook</text>
+<text x="656" y="412" fill="#e8eef6" font-size="11.5" font-family="ui-sans-serif,system-ui,sans-serif" clip-path="url(#q2l3)">as Bayut under peak traffic —</text>
+<text x="656" y="430" fill="#e8eef6" font-size="11.5" font-family="ui-sans-serif,system-ui,sans-serif" clip-path="url(#q2l4)">then check SQS retry storms.</text>
 <rect x="820" y="420" width="6" height="12" rx="1" fill="#1fd5f9">
 <animate attributeName="opacity" values="0;0;1;0;1;0;1;0;0" keyTimes="0;0.74;0.75;0.82;0.83;0.90;0.91;0.97;1" dur="11s" repeatCount="indefinite"/>
 </rect>
 </g>
 <rect x="748" y="512" width="60" height="5" rx="2.5" fill="#2a3548"/>
 </g>
-<g>
+<g opacity="1">
 <animate attributeName="opacity" values="1;1;0;0;1" keyTimes="0;0.19;0.22;0.975;1" dur="11s" repeatCount="indefinite"/>
 <animateTransform attributeName="transform" type="translate" values="250 400;250 400;318 344;318 344;318 348;318 344;318 344" keyTimes="0;0.03;0.12;0.128;0.146;0.162;1" dur="11s" repeatCount="indefinite"/>
 <path d="M0 0l0 18 5-4 4 9 3-1.4-4-8.6 7-.2z" fill="#f4f7fb" stroke="#030712" stroke-width="1"/>
