@@ -116,9 +116,6 @@ export function getPhoneOriginOptions(req: Request): PhoneOriginOption[] {
 }
 
 export function getPhoneOrigin(req: Request): string {
-  const override = process.env.PHONE_PUBLIC_ORIGIN?.trim().replace(/\/$/, "");
-  if (override && isUsablePhoneOrigin(override)) return override;
-
   const url = new URL(req.url);
   const hostHeader =
     req.headers.get("x-forwarded-host") || req.headers.get("host") || url.host;
@@ -127,14 +124,16 @@ export function getPhoneOrigin(req: Request): string {
   const proto = forwarded
     ? forwarded.split(",")[0].trim()
     : url.protocol.replace(":", "");
-
+  const override = process.env.PHONE_PUBLIC_ORIGIN?.trim().replace(/\/$/, "");
+  if (override && isUsablePhoneOrigin(override)) return override;
+  const port = hostPort(hostHeader, url.port || process.env.PORT || "47317");
+  const lan = firstPrivateIPv4();
+  if (lan) {
+    const lanOrigin = `http://${lan}:${port}`;
+    if (isUsablePhoneOrigin(lanOrigin)) return lanOrigin;
+  }
   if (!isLoopbackHost(hostname)) {
     return `${proto}://${hostHeader}`;
   }
-
-  const port = hostPort(hostHeader, url.port || process.env.PORT || "47317");
-  const lan = firstPrivateIPv4();
-  if (!lan) return `${proto}://${hostHeader}`;
-  const lanOrigin = `http://${lan}:${port}`;
-  return isUsablePhoneOrigin(lanOrigin) ? lanOrigin : `${proto}://${hostHeader}`;
+  return `${proto}://${hostHeader}`;
 }
