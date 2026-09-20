@@ -941,7 +941,98 @@
     streamAnswer(q);
   });
 
+  const PREVIEW_IDLE =
+    "Share a window or tab to preview it here. Type a question below — answers never appear on this page.";
+
+  let displayStream = null;
+
+  function setShareLabel(sharing) {
+    const btn = el("share-btn");
+    if (!btn) return;
+    btn.innerHTML = sharing
+      ? '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12"/></svg>Stop sharing'
+      : '<svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"/></svg>Share screen';
+  }
+
+  function setPreviewMessage(text) {
+    const copy = el("preview-copy");
+    if (copy) copy.textContent = text;
+  }
+
+  function showSharePreview(on) {
+    const video = el("share-video");
+    const icon = el("preview-icon");
+    const copy = el("preview-copy");
+    if (video) video.classList.toggle("hidden", !on);
+    if (icon) icon.classList.toggle("hidden", on);
+    if (copy) copy.classList.toggle("hidden", on);
+  }
+
+  function stopShare() {
+    if (displayStream) {
+      displayStream.getTracks().forEach(function (t) {
+        t.stop();
+      });
+      displayStream = null;
+    }
+    const video = el("share-video");
+    if (video) video.srcObject = null;
+    showSharePreview(false);
+    setPreviewMessage(PREVIEW_IDLE);
+    setShareLabel(false);
+  }
+
+  function startShare() {
+    const media = navigator.mediaDevices;
+    if (!media || !media.getDisplayMedia) {
+      setPreviewMessage("Screen capture isn't available in this browser.");
+      return;
+    }
+    media
+      .getDisplayMedia({ video: true, audio: false })
+      .then(function (stream) {
+        if (displayStream) {
+          displayStream.getTracks().forEach(function (t) {
+            t.stop();
+          });
+        }
+        displayStream = stream;
+        const video = el("share-video");
+        if (video) {
+          video.srcObject = stream;
+          video.muted = true;
+          video.play().catch(function () {});
+        }
+        showSharePreview(true);
+        setShareLabel(true);
+        const track = stream.getVideoTracks()[0];
+        if (track) {
+          track.addEventListener("ended", function () {
+            stopShare();
+          });
+        }
+      })
+      .catch(function (err) {
+        const name = err && err.name;
+        if (name === "NotAllowedError") {
+          setPreviewMessage(
+            "Screen share was denied or cancelled. Click Share screen again to pick a window or tab.",
+          );
+        } else {
+          setPreviewMessage(
+            "Couldn't start screen capture. You can still type questions below.",
+          );
+        }
+      });
+  }
+
+  function toggleShare() {
+    if (displayStream) stopShare();
+    else startShare();
+  }
+
   el("start-btn").addEventListener("click", startSession);
+  el("share-btn").addEventListener("click", toggleShare);
 
   el("copy-btn").addEventListener("click", function () {
     const url = el("phone-url").textContent;
