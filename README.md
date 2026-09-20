@@ -7,6 +7,8 @@ in a specific persona and **streamed live to your phone and to a separate
 browser window** — never onto the screen you share. An interviewer watching your
 screen-share never sees the help.
 
+**Live demo:** https://alexalghisi.github.io/ai-interview-helper/
+
 > Window capture + phone pairing (QR + code); manual, vision, and **live-audio**
 > question capture; auto-answer on detected spoken questions; an append-only
 > answer feed you read at your own pace.
