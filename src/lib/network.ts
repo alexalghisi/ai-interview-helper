@@ -103,13 +103,13 @@ export function getPhoneOriginOptions(req: Request): PhoneOriginOption[] {
   add(
     "Public",
     process.env.PHONE_PUBLIC_ORIGIN?.trim() ?? null,
-    "PHONE_PUBLIC_ORIGIN — works anywhere while the tunnel is up",
+    "PHONE_PUBLIC_ORIGIN — public https origin (Fly / tunnel)",
   );
   if (!isLoopbackHost(hostname)) {
     add("This host", `${proto}://${hostHeader}`, "The address you opened");
   }
   const lan = firstPrivateIPv4();
-  if (lan) {
+  if (lan && isLoopbackHost(hostname)) {
     add("Wi-Fi", `http://${lan}:${port}`, "Same Wi-Fi network as this laptop");
   }
   return options;
@@ -126,14 +126,15 @@ export function getPhoneOrigin(req: Request): string {
     : url.protocol.replace(":", "");
   const override = process.env.PHONE_PUBLIC_ORIGIN?.trim().replace(/\/$/, "");
   if (override && isUsablePhoneOrigin(override)) return override;
+  const requestOrigin = `${proto}://${hostHeader}`.replace(/\/$/, "");
+  if (!isLoopbackHost(hostname) && isUsablePhoneOrigin(requestOrigin)) {
+    return requestOrigin;
+  }
   const port = hostPort(hostHeader, url.port || process.env.PORT || "47317");
   const lan = firstPrivateIPv4();
   if (lan) {
     const lanOrigin = `http://${lan}:${port}`;
     if (isUsablePhoneOrigin(lanOrigin)) return lanOrigin;
   }
-  if (!isLoopbackHost(hostname)) {
-    return `${proto}://${hostHeader}`;
-  }
-  return `${proto}://${hostHeader}`;
+  return requestOrigin;
 }

@@ -204,7 +204,27 @@ answer promptly without hammering the server.
 | `ANSWER_MAX_TOKENS` | Max answer tokens (latency cap) | `512` |
 | `APP_ACCESS_PASSWORD` | Shared login password (gates the whole app) | none → open |
 | `AUTH_SECRET` | Secret used to sign the session cookie | derived from password |
-| `PHONE_PUBLIC_ORIGIN` | Public origin offered as the **Public** phone link | none → LAN/host only |
+| `PHONE_PUBLIC_ORIGIN` | Public https origin for the phone QR (**Public** link) | Fly: `https://ai-interview-helper.fly.dev` via `fly.toml`; local: none → LAN/host |
+
+## Hosted public URL (always-on, no laptop process)
+
+This app is meant to stay up like a Colab notebook: one public https URL, no
+`npm start` on a laptop, no Cloudflare quick tunnel. Fly.io is the host because
+sessions and the desktop→phone relay live in **one Node process** (in-memory +
+SSE). Do not move it to Vercel serverless.
+
+Public origin (after you deploy the app name in `fly.toml`):
+
+**https://ai-interview-helper.fly.dev**
+
+- **Laptop control:** open that URL, click **Start session**.
+- **Phone answers:** scan the QR, or open `https://ai-interview-helper.fly.dev/s/CODE`.
+- If `APP_ACCESS_PASSWORD` is set, the phone hits `/login` once, then `/s/CODE`.
+
+`fly.toml` sets `PHONE_PUBLIC_ORIGIN` to that same origin so the QR is the
+public https link, not a laptop LAN address or a Fly-private IP. If you create
+a different app name or attach a custom domain, change `PHONE_PUBLIC_ORIGIN` to
+match (in `fly.toml` `[env]`, or `fly secrets set PHONE_PUBLIC_ORIGIN=…`).
 
 ## Deploy to Fly.io (single always-on instance)
 
@@ -215,14 +235,28 @@ serverless, no scale-to-zero, no horizontal autoscaling. The included
 false`, `auto_start_machines = false`).
 
 Files: `Dockerfile` (multi-stage, Next.js **standalone** output → small image),
-`.dockerignore`, `fly.toml` (internal port `47317`, `force_https`). The
-container listens on `0.0.0.0:$PORT`.
+`.dockerignore`, `fly.toml` (internal port `47317`, `force_https`,
+`PHONE_PUBLIC_ORIGIN`). The container listens on `0.0.0.0:$PORT`.
 
-Once you have a `FLY_API_TOKEN` / are logged in:
+`--ha=false` is required: Fly's default is two machines, which would split the
+in-memory session / SSE relay.
+
+### One-command deploy
+
+Requires `fly auth login` or `FLY_API_TOKEN` once, and the app + secrets already
+created:
 
 ```bash
-# 1) First time only: create the app (matches the name in fly.toml)
+fly deploy --ha=false
+```
+
+### First time only
+
+```bash
+# 1) Create the app (matches the name in fly.toml)
 fly apps create ai-interview-helper
+# If that name is taken, use a close unused variant and update `app` +
+# PHONE_PUBLIC_ORIGIN in fly.toml to https://<that-name>.fly.dev
 
 # 2) Set runtime secrets (NEVER commit these):
 fly secrets set \
@@ -232,9 +266,9 @@ fly secrets set \
   AUTH_SECRET="$(openssl rand -hex 32)"
 
 # 3) Build + deploy the single machine
-fly deploy
+fly deploy --ha=false
 
-# 4) Verify exactly one machine is running (scale is pinned to 1)
+# 4) Pin scale to one machine
 fly scale count 1
 fly status
 fly logs
@@ -295,7 +329,7 @@ scripts/
 ```
 Dockerfile        Multi-stage build → Next.js standalone runner (node server.js)
 .dockerignore     Keeps the build context (and secrets) out of the image
-fly.toml          One always-on machine, internal port 47317, HTTPS
+fly.toml          One always-on machine, port 47317, HTTPS, PHONE_PUBLIC_ORIGIN
 next.config.ts    output: "standalone"
 ```
 

@@ -15,6 +15,7 @@ primary_region = "iad"
   PORT = "47317"
   HOSTNAME = "0.0.0.0"
   NODE_ENV = "production"
+  PHONE_PUBLIC_ORIGIN = "https://ai-interview-helper.fly.dev"
 
 [http_service]
   internal_port = 47317

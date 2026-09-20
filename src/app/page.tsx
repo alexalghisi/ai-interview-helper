@@ -934,11 +934,13 @@ export default function DesktopPage() {
                         </button>
                       ))}
                     </div>
-                    <p className="mt-1.5 text-left text-[11px] text-muted-foreground">
-                      If the QR doesn&apos;t load on the phone, switch to{" "}
-                      <span className="text-foreground">Wi-Fi</span> (same
-                      network) — a public tunnel link dies with the tunnel.
-                    </p>
+                    {originOptions.some((o) => o.label === "Wi-Fi") && (
+                      <p className="mt-1.5 text-left text-[11px] text-muted-foreground">
+                        If the QR doesn&apos;t load on the phone, switch to{" "}
+                        <span className="text-foreground">Wi-Fi</span> (same
+                        network) — a public tunnel link dies with the tunnel.
+                      </p>
+                    )}
                   </div>
                 )}
                 <div className="w-full">
