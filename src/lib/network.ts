@@ -24,9 +24,9 @@ function hostName(hostHeader: string): string {
     const end = hostHeader.indexOf("]");
     if (end !== -1) return hostHeader.slice(1, end);
   }
-  if (hostHeader.includes(".") || !hostHeader.includes(":")) {
-    const colon = hostHeader.lastIndexOf(":");
-    return colon === -1 ? hostHeader : hostHeader.slice(0, colon);
+  const colonCount = (hostHeader.match(/:/g) ?? []).length;
+  if (colonCount === 1) {
+    return hostHeader.slice(0, hostHeader.lastIndexOf(":"));
   }
   return hostHeader.replace(/^\[|\]$/g, "");
 }
