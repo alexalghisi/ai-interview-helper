@@ -228,7 +228,17 @@ test("waitForUpdate returns the current snapshot when the cursor is stale", asyn
   const { code } = createSession();
   const immediate = await waitForUpdate(code, -1, 50);
   assert.equal(immediate.code, code);
+  assert.equal(immediate.version, getPublicState(code).version);
+  assert.deepEqual(immediate.entries, []);
   assert.equal(await waitForUpdate("ZZZZZ", -1, 50), undefined);
+});
+
+test("waitForUpdate returns the same snapshot after timeout when the cursor is current", async () => {
+  const { code } = createSession();
+  const since = getPublicState(code).version;
+  const result = await waitForUpdate(code, since, 40);
+  assert.equal(result.code, code);
+  assert.equal(result.version, since);
 });
 
 test("waitForUpdate wakes after an append and control polls never carry answers", async () => {
@@ -244,8 +254,10 @@ test("waitForUpdate wakes after an append and control polls never carry answers"
   const controlSince = getSession(code).controlVersion;
   const controlWait = waitForUpdate(code, controlSince, 800, "control");
   appendDelta(code, id, " more tokens");
+  assert.equal(getSession(code).controlVersion, controlSince);
   const controlState = await controlWait;
   assert.equal(controlState.entries.some((e) => e.answer), false);
+  assert.equal(controlState.version, controlSince);
 });
 
 test("ping does not bump the long-poll version", () => {
