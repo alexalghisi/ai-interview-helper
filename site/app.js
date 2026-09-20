@@ -178,8 +178,9 @@
       h = Math.imul(h, 16777619);
     }
     function bit(x, y) {
-      const v = Math.imul(x + 3, 374761393) ^ Math.imul(y + 7, 668265263) ^ h;
-      return ((v >>> 16) ^ v) & 1;
+      let v = h ^ Math.imul(x + 1, 374761393) ^ Math.imul(y + 1, 668265263);
+      v = Math.imul(v ^ (v >>> 13), 1274126177);
+      return (v >>> 16) & 1;
     }
     function finder(grid, ox, oy) {
       for (let y = 0; y < 7; y++) {
