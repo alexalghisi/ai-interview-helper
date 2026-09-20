@@ -204,27 +204,36 @@ answer promptly without hammering the server.
 | `ANSWER_MAX_TOKENS` | Max answer tokens (latency cap) | `512` |
 | `APP_ACCESS_PASSWORD` | Shared login password (gates the whole app) | none → open |
 | `AUTH_SECRET` | Secret used to sign the session cookie | derived from password |
-| `PHONE_PUBLIC_ORIGIN` | Public https origin for the phone QR (**Public** link) | Fly: `https://ai-interview-helper.fly.dev` via `fly.toml`; local: none → LAN/host |
+| `PHONE_PUBLIC_ORIGIN` | Public https origin for the phone QR (**Public** link) | unset locally → LAN / request host; `fly.toml` sets `https://ai-interview-helper.fly.dev` |
 
-## Hosted public URL (always-on, no laptop process)
+## Hosted public URL
 
-This app is meant to stay up like a Colab notebook: one public https URL, no
-`npm start` on a laptop, no Cloudflare quick tunnel. Fly.io is the host because
-sessions and the desktop→phone relay live in **one Node process** (in-memory +
-SSE). Do not move it to Vercel serverless.
+Local use is `npm run dev` on port **47317**. Leave `GEMINI_API_KEY` empty and
+the mock generator still streams answers, so the laptop + phone flow works
+without a provider key.
 
-Public origin (after you deploy the app name in `fly.toml`):
+A public https URL is a separate step: deploy **one** always-on Fly machine
+after `fly apps create` and `fly secrets set`. Sessions and the desktop→phone
+relay live in one Node process (in-memory + SSE), so do not run a second
+machine or scale-to-zero.
 
-**https://ai-interview-helper.fly.dev**
+```bash
+fly deploy --ha=false
+```
 
-- **Laptop control:** open that URL, click **Start session**.
-- **Phone answers:** scan the QR, or open `https://ai-interview-helper.fly.dev/s/CODE`.
+`fly.toml` names the app `ai-interview-helper` and sets
+`PHONE_PUBLIC_ORIGIN=https://ai-interview-helper.fly.dev`. After a successful
+deploy, the phone QR uses that origin — not a laptop LAN address or a
+Fly-private `172.x`. If you use a different app name or domain, point
+`PHONE_PUBLIC_ORIGIN` at it (`fly.toml` `[env]`, or
+`fly secrets set PHONE_PUBLIC_ORIGIN=…`).
+
+- **Laptop:** open the public URL, click **Start session**.
+- **Phone:** scan the QR, or `/s/CODE` on that same origin.
 - If `APP_ACCESS_PASSWORD` is set, the phone hits `/login` once, then `/s/CODE`.
 
-`fly.toml` sets `PHONE_PUBLIC_ORIGIN` to that same origin so the QR is the
-public https link, not a laptop LAN address or a Fly-private IP. If you create
-a different app name or attach a custom domain, change `PHONE_PUBLIC_ORIGIN` to
-match (in `fly.toml` `[env]`, or `fly secrets set PHONE_PUBLIC_ORIGIN=…`).
+That hostname is live only after a successful deploy with Fly auth. This repo
+does not assume it is already reachable.
 
 ## Deploy to Fly.io (single always-on instance)
 
@@ -241,7 +250,7 @@ Files: `Dockerfile` (multi-stage, Next.js **standalone** output → small image)
 `--ha=false` is required: Fly's default is two machines, which would split the
 in-memory session / SSE relay.
 
-### One-command deploy
+### Deploy (after secrets)
 
 Requires `fly auth login` or `FLY_API_TOKEN` once, and the app + secrets already
 created:
