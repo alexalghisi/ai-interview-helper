@@ -7,6 +7,10 @@ in a specific persona and **streamed live to your phone and to a separate
 browser window** — never onto the screen you share. An interviewer watching your
 screen-share never sees the help.
 
+![Control on the laptop, live answers on the phone](docs/preview.svg)
+
+Laptop control pairs a phone with a QR and 5-character code. Answers stream onto the phone as append-only cards — never onto the shared screen.
+
 **Live demo:** https://alexalghisi.github.io/ai-interview-helper/
 
 > Window capture + phone pairing (QR + code); manual, vision, and **live-audio**
