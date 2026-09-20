@@ -45,7 +45,17 @@ import {
 
 const VISION_INTERVAL_MS = 8000;
 
-function pickPhoneOrigin(phoneOrigin: unknown, browserOrigin: string): string {
+type PhoneOriginOption = { label: string; value: string; hint: string };
+
+function pickPhoneOrigin(
+  phoneOrigin: unknown,
+  browserOrigin: string,
+  options: PhoneOriginOption[] = [],
+): string {
+  const pub = options.find((o) => o.label === "Public");
+  if (pub) return pub.value;
+  const wifi = options.find((o) => o.label === "Wi-Fi");
+  if (wifi) return wifi.value;
   if (typeof phoneOrigin === "string") {
     try {
       const u = new URL(phoneOrigin);
@@ -63,8 +73,6 @@ function pickPhoneOrigin(phoneOrigin: unknown, browserOrigin: string): string {
   }
   return browserOrigin;
 }
-
-type PhoneOriginOption = { label: string; value: string; hint: string };
 
 export default function DesktopPage() {
   const [code, setCode] = useState<string | null>(null);
@@ -119,7 +127,7 @@ export default function DesktopPage() {
         ? data.phoneOrigins
         : [];
       setOriginOptions(options);
-      setOrigin(pickPhoneOrigin(data.phoneOrigin, browserOrigin));
+      setOrigin(pickPhoneOrigin(data.phoneOrigin, browserOrigin, options));
       setCode(data.code);
       return data.code as string;
     } catch (e) {
@@ -903,7 +911,7 @@ export default function DesktopPage() {
                     {code}
                   </p>
                 </div>
-                {originOptions.length > 1 && (
+                {originOptions.length > 0 && (
                   <div className="w-full">
                     <p className="mb-1.5 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
                       Phone link
