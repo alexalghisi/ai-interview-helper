@@ -168,43 +168,424 @@
     return url.toString();
   }
 
-  function drawQr(canvas, text) {
-    const ctx = canvas.getContext("2d");
-    const n = 25;
-    const cell = canvas.width / n;
-    let h = 2166136261;
-    for (let i = 0; i < text.length; i++) {
-      h ^= text.charCodeAt(i);
-      h = Math.imul(h, 16777619);
+  const QR_EXP = new Uint8Array(512);
+  const QR_LOG = new Uint8Array(256);
+  (function initQrGf() {
+    let x = 1;
+    for (let i = 0; i < 255; i++) {
+      QR_EXP[i] = x;
+      QR_LOG[x] = i;
+      x <<= 1;
+      if (x & 256) x ^= 0x11d;
     }
-    function bit(x, y) {
-      let v = h ^ Math.imul(x + 1, 374761393) ^ Math.imul(y + 1, 668265263);
-      v = Math.imul(v ^ (v >>> 13), 1274126177);
-      return (v >>> 16) & 1;
+    for (let i = 255; i < 512; i++) QR_EXP[i] = QR_EXP[i - 255];
+  })();
+
+  function qrMul(a, b) {
+    if (a === 0 || b === 0) return 0;
+    return QR_EXP[QR_LOG[a] + QR_LOG[b]];
+  }
+
+  function qrRsGen(ec) {
+    let g = [1];
+    for (let i = 0; i < ec; i++) {
+      const next = new Array(g.length + 1).fill(0);
+      for (let j = 0; j < g.length; j++) {
+        next[j] ^= g[j];
+        next[j + 1] ^= qrMul(g[j], QR_EXP[i]);
+      }
+      g = next;
     }
-    function finder(grid, ox, oy) {
-      for (let y = 0; y < 7; y++) {
-        for (let x = 0; x < 7; x++) {
-          const edge = x === 0 || y === 0 || x === 6 || y === 6;
-          const inner = x >= 2 && x <= 4 && y >= 2 && y <= 4;
-          grid[y + oy][x + ox] = edge || inner ? 1 : 0;
+    return g;
+  }
+
+  function qrRsEncode(data, ec) {
+    const gen = qrRsGen(ec);
+    const msg = data.concat(new Array(ec).fill(0));
+    for (let i = 0; i < data.length; i++) {
+      const coef = msg[i];
+      if (coef === 0) continue;
+      for (let j = 0; j < gen.length; j++) {
+        msg[i + j] ^= qrMul(gen[j], coef);
+      }
+    }
+    return msg.slice(data.length);
+  }
+
+  const QR_DATA_CW = [0, 16, 28, 44, 64, 86, 108, 124, 154, 182, 216];
+  const QR_EC_BLOCK = [0, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26];
+  const QR_GROUP2 = [0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 1];
+  const QR_BLOCKS = [0, 1, 1, 1, 2, 2, 4, 4, 4, 5, 5];
+  const QR_ALIGN = [
+    [],
+    [],
+    [6, 18],
+    [6, 22],
+    [6, 26],
+    [6, 30],
+    [6, 34],
+    [6, 22, 38],
+    [6, 24, 42],
+    [6, 26, 46],
+    [6, 28, 50],
+  ];
+
+  function qrPushBits(bits, value, n) {
+    for (let i = n - 1; i >= 0; i--) bits.push((value >>> i) & 1);
+  }
+
+  function qrChooseVersion(byteLen) {
+    for (let v = 1; v <= 10; v++) {
+      const countBits = v >= 10 ? 16 : 8;
+      if (4 + countBits + byteLen * 8 <= QR_DATA_CW[v] * 8) return v;
+    }
+    return 0;
+  }
+
+  function qrBuildBits(bytes, version) {
+    const bits = [];
+    const countBits = version >= 10 ? 16 : 8;
+    qrPushBits(bits, 4, 4);
+    qrPushBits(bits, bytes.length, countBits);
+    for (let i = 0; i < bytes.length; i++) qrPushBits(bits, bytes[i], 8);
+    const cap = QR_DATA_CW[version] * 8;
+    const term = Math.min(4, cap - bits.length);
+    for (let i = 0; i < term; i++) bits.push(0);
+    while (bits.length % 8) bits.push(0);
+    const pads = [0xec, 0x11];
+    let p = 0;
+    while (bits.length < cap) {
+      qrPushBits(bits, pads[p], 8);
+      p ^= 1;
+    }
+    return bits;
+  }
+
+  function qrToCodewords(bits) {
+    const out = [];
+    for (let i = 0; i < bits.length; i += 8) {
+      let v = 0;
+      for (let j = 0; j < 8; j++) v = (v << 1) | bits[i + j];
+      out.push(v);
+    }
+    return out;
+  }
+
+  function qrBlockPlan(version) {
+    const total = QR_BLOCKS[version];
+    const n2 = QR_GROUP2[version];
+    const n1 = total - n2;
+    const shortLen = Math.floor(QR_DATA_CW[version] / total);
+    const plan = [];
+    for (let i = 0; i < n1; i++) plan.push(shortLen);
+    for (let i = 0; i < n2; i++) plan.push(shortLen + 1);
+    return plan;
+  }
+
+  function qrInterleave(version, dataCw) {
+    const ec = QR_EC_BLOCK[version];
+    const groups = [];
+    const plan = qrBlockPlan(version);
+    let offset = 0;
+    for (let b = 0; b < plan.length; b++) {
+      const n = plan[b];
+      const slice = dataCw.slice(offset, offset + n);
+      offset += n;
+      groups.push({ data: slice, ecc: qrRsEncode(slice, ec) });
+    }
+    const maxD = Math.max.apply(
+      null,
+      groups.map(function (g) {
+        return g.data.length;
+      }),
+    );
+    const out = [];
+    for (let i = 0; i < maxD; i++) {
+      for (let b = 0; b < groups.length; b++) {
+        if (i < groups[b].data.length) out.push(groups[b].data[i]);
+      }
+    }
+    for (let i = 0; i < ec; i++) {
+      for (let b = 0; b < groups.length; b++) out.push(groups[b].ecc[i]);
+    }
+    return out;
+  }
+
+  function qrFormatBits(mask) {
+    const data = mask;
+    let d = data << 10;
+    const gen = 0x537;
+    for (let i = 14; i >= 10; i--) {
+      if ((d >>> i) & 1) d ^= gen << (i - 10);
+    }
+    return ((data << 10) | (d & 1023)) ^ 0x5412;
+  }
+
+  function qrVersionBits(version) {
+    let d = version << 12;
+    const gen = 0x1f25;
+    for (let i = 17; i >= 12; i--) {
+      if ((d >>> i) & 1) d ^= gen << (i - 12);
+    }
+    return (version << 12) | (d & 4095);
+  }
+
+  function qrSetFinder(grid, reserved, ox, oy) {
+    for (let y = 0; y < 7; y++) {
+      for (let x = 0; x < 7; x++) {
+        const edge = x === 0 || y === 0 || x === 6 || y === 6;
+        const inner = x >= 2 && x <= 4 && y >= 2 && y <= 4;
+        grid[oy + y][ox + x] = edge || inner ? 1 : 0;
+        reserved[oy + y][ox + x] = 1;
+      }
+    }
+  }
+
+  function qrSetAlign(grid, reserved, cx, cy) {
+    for (let y = -2; y <= 2; y++) {
+      for (let x = -2; x <= 2; x++) {
+        const edge = Math.max(Math.abs(x), Math.abs(y)) === 2;
+        grid[cy + y][cx + x] = edge || (x === 0 && y === 0) ? 1 : 0;
+        reserved[cy + y][cx + x] = 1;
+      }
+    }
+  }
+
+  function qrMaskBit(mask, r, c) {
+    if (mask === 0) return ((r + c) & 1) === 0;
+    if (mask === 1) return (r & 1) === 0;
+    if (mask === 2) return c % 3 === 0;
+    if (mask === 3) return (r + c) % 3 === 0;
+    if (mask === 4) return (((r >> 1) + Math.floor(c / 3)) & 1) === 0;
+    if (mask === 5) return ((r * c) % 2) + ((r * c) % 3) === 0;
+    if (mask === 6) return ((((r * c) % 2) + ((r * c) % 3)) & 1) === 0;
+    return ((((r + c) % 2) + ((r * c) % 3)) & 1) === 0;
+  }
+
+  function qrPenalty(grid, n) {
+    let s = 0;
+    for (let r = 0; r < n; r++) {
+      let run = 1;
+      for (let c = 1; c < n; c++) {
+        if (grid[r][c] === grid[r][c - 1]) run += 1;
+        else {
+          if (run >= 5) s += 3 + (run - 5);
+          run = 1;
+        }
+      }
+      if (run >= 5) s += 3 + (run - 5);
+    }
+    for (let c = 0; c < n; c++) {
+      let run = 1;
+      for (let r = 1; r < n; r++) {
+        if (grid[r][c] === grid[r - 1][c]) run += 1;
+        else {
+          if (run >= 5) s += 3 + (run - 5);
+          run = 1;
+        }
+      }
+      if (run >= 5) s += 3 + (run - 5);
+    }
+    for (let r = 0; r < n - 1; r++) {
+      for (let c = 0; c < n - 1; c++) {
+        const v = grid[r][c];
+        if (v === grid[r][c + 1] && v === grid[r + 1][c] && v === grid[r + 1][c + 1]) s += 3;
+      }
+    }
+    const pat = [1, 0, 1, 1, 1, 0, 1];
+    function finderHits(line) {
+      let p = 0;
+      for (let i = 0; i <= line.length - 7; i++) {
+        let ok = true;
+        for (let k = 0; k < 7; k++) if (line[i + k] !== pat[k]) ok = false;
+        if (!ok) continue;
+        const left =
+          i >= 4 &&
+          line[i - 1] === 0 &&
+          line[i - 2] === 0 &&
+          line[i - 3] === 0 &&
+          line[i - 4] === 0;
+        const right =
+          i + 11 <= line.length &&
+          line[i + 7] === 0 &&
+          line[i + 8] === 0 &&
+          line[i + 9] === 0 &&
+          line[i + 10] === 0;
+        if (left || right) p += 40;
+      }
+      return p;
+    }
+    for (let r = 0; r < n; r++) s += finderHits(grid[r]);
+    for (let c = 0; c < n; c++) {
+      const col = [];
+      for (let r = 0; r < n; r++) col.push(grid[r][c]);
+      s += finderHits(col);
+    }
+    let dark = 0;
+    for (let r = 0; r < n; r++) {
+      for (let c = 0; c < n; c++) dark += grid[r][c];
+    }
+    s += Math.abs(Math.floor((100 * dark) / (n * n) / 5) - 10) * 10;
+    return s;
+  }
+
+  function qrPlaceFormat(grid, n, bits) {
+    const a = [];
+    for (let i = 0; i < 6; i++) a.push([8, i]);
+    a.push([8, 7], [8, 8], [7, 8]);
+    for (let i = 5; i >= 0; i--) a.push([i, 8]);
+    const b = [];
+    for (let i = 0; i < 8; i++) b.push([n - 1 - i, 8]);
+    for (let i = 0; i < 7; i++) b.push([8, n - 7 + i]);
+    for (let i = 0; i < 15; i++) {
+      const bit = (bits >>> i) & 1;
+      grid[a[i][1]][a[i][0]] = bit;
+      grid[b[i][1]][b[i][0]] = bit;
+    }
+  }
+
+  function qrPlaceVersion(grid, reserved, n, version) {
+    if (version < 7) return;
+    const bits = qrVersionBits(version);
+    let k = 0;
+    for (let c = 0; c < 6; c++) {
+      for (let r = 0; r < 3; r++) {
+        const bit = (bits >>> k) & 1;
+        k += 1;
+        grid[n - 11 + r][c] = bit;
+        reserved[n - 11 + r][c] = 1;
+        grid[c][n - 11 + r] = bit;
+        reserved[c][n - 11 + r] = 1;
+      }
+    }
+  }
+
+  function encodeQr(text) {
+    const bytes = Array.from(new TextEncoder().encode(text));
+    const version = qrChooseVersion(bytes.length);
+    if (!version) return null;
+    const n = 21 + 4 * (version - 1);
+    const dataCw = qrToCodewords(qrBuildBits(bytes, version));
+    const codewords = qrInterleave(version, dataCw);
+    const stream = [];
+    for (let i = 0; i < codewords.length; i++) qrPushBits(stream, codewords[i], 8);
+
+    const grid = [];
+    const reserved = [];
+    for (let y = 0; y < n; y++) {
+      grid[y] = new Array(n).fill(0);
+      reserved[y] = new Array(n).fill(0);
+    }
+
+    qrSetFinder(grid, reserved, 0, 0);
+    qrSetFinder(grid, reserved, n - 7, 0);
+    qrSetFinder(grid, reserved, 0, n - 7);
+
+    for (let i = 0; i < 8; i++) {
+      reserved[7][i] = 1;
+      reserved[i][7] = 1;
+      reserved[7][n - 8 + i] = 1;
+      reserved[n - 8 + i][7] = 1;
+      reserved[i][n - 8] = 1;
+      reserved[n - 8][i] = 1;
+    }
+
+    for (let i = 8; i < n - 8; i++) {
+      grid[6][i] = i % 2 === 0 ? 1 : 0;
+      grid[i][6] = i % 2 === 0 ? 1 : 0;
+      reserved[6][i] = 1;
+      reserved[i][6] = 1;
+    }
+    reserved[6][6] = 1;
+
+    const pos = QR_ALIGN[version];
+    for (let i = 0; i < pos.length; i++) {
+      for (let j = 0; j < pos.length; j++) {
+        const x = pos[i];
+        const y = pos[j];
+        if ((x < 9 && y < 9) || (x > n - 10 && y < 9) || (x < 9 && y > n - 10)) continue;
+        qrSetAlign(grid, reserved, x, y);
+      }
+    }
+
+    reserved[n - 8][8] = 1;
+    grid[n - 8][8] = 1;
+
+    for (let i = 0; i < 9; i++) {
+      reserved[8][i] = 1;
+      reserved[i][8] = 1;
+    }
+    for (let i = 0; i < 8; i++) {
+      reserved[8][n - 1 - i] = 1;
+      reserved[n - 1 - i][8] = 1;
+    }
+
+    if (version >= 7) {
+      for (let c = 0; c < 6; c++) {
+        for (let r = 0; r < 3; r++) {
+          reserved[n - 11 + r][c] = 1;
+          reserved[c][n - 11 + r] = 1;
         }
       }
     }
-    const grid = [];
-    for (let y = 0; y < n; y++) {
-      grid[y] = [];
-      for (let x = 0; x < n; x++) grid[y][x] = bit(x, y);
+
+    let bi = 0;
+    let upward = true;
+    for (let col = n - 1; col > 0; col -= 2) {
+      if (col === 6) col -= 1;
+      for (let i = 0; i < n; i++) {
+        const row = upward ? n - 1 - i : i;
+        for (let k = 0; k < 2; k++) {
+          const x = col - k;
+          if (reserved[row][x]) continue;
+          grid[row][x] = bi < stream.length ? stream[bi] : 0;
+          bi += 1;
+        }
+      }
+      upward = !upward;
     }
-    finder(grid, 0, 0);
-    finder(grid, n - 7, 0);
-    finder(grid, 0, n - 7);
+
+    let best = null;
+    let bestScore = Infinity;
+    for (let mask = 0; mask < 8; mask++) {
+      const trial = [];
+      for (let y = 0; y < n; y++) {
+        trial[y] = grid[y].slice();
+        for (let x = 0; x < n; x++) {
+          if (!reserved[y][x] && qrMaskBit(mask, y, x)) trial[y][x] ^= 1;
+        }
+      }
+      qrPlaceFormat(trial, n, qrFormatBits(mask));
+      qrPlaceVersion(trial, reserved, n, version);
+      const score = qrPenalty(trial, n);
+      if (score < bestScore) {
+        bestScore = score;
+        best = trial;
+      }
+    }
+    return best;
+  }
+
+  function drawQr(canvas, text) {
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const modules = encodeQr(text);
+    if (!modules) return;
+    const quiet = 4;
+    const dim = modules.length + quiet * 2;
+    const scale = canvas.width / dim;
     ctx.fillStyle = "#0a0a12";
-    for (let y = 0; y < n; y++) {
-      for (let x = 0; x < n; x++) {
-        if (grid[y][x]) ctx.fillRect(Math.floor(x * cell), Math.floor(y * cell), Math.ceil(cell), Math.ceil(cell));
+    for (let y = 0; y < modules.length; y++) {
+      for (let x = 0; x < modules.length; x++) {
+        if (!modules[y][x]) continue;
+        ctx.fillRect(
+          Math.floor((x + quiet) * scale),
+          Math.floor((y + quiet) * scale),
+          Math.ceil(scale),
+          Math.ceil(scale),
+        );
       }
     }
   }
