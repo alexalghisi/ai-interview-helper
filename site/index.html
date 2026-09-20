@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="theme-color" content="#0a0a12">
+  <title>AI Interview HelpER</title>
+  <link rel="stylesheet" href="/ai-interview-helper/styles.css">
+</head>
+<body>
+  <div class="app-backdrop">
+    <div id="phone-view" class="phone-page hidden">
+      <div class="feed-page">
+        <div class="feed-bar">
+          <div class="feed-bar-left">
+            <div class="icon-box sm primary">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.9 2.1 4.2 12.4c-.4.7.2 1.6 1 1.6h5.1l-1.4 8 7.6-11.6c.5-.7-.1-1.7-1-1.7h-5l1.4-6.6c.1-.6-.4-1.1-1-1z"/></svg>
+            </div>
+            <div>
+              <p class="feed-title">Interview HelpER</p>
+              <p class="feed-code" id="phone-code"></p>
+            </div>
+          </div>
+          <div class="feed-bar-right">
+            <button type="button" class="hold-btn" id="phone-hold"></button>
+            <span class="badge success" id="phone-live"><span class="pulse-dot"></span>Live</span>
+          </div>
+        </div>
+        <div class="feed-body scroll-slim" id="phone-feed"></div>
+        <p class="feed-foot">Private to this device · answers are never drawn on the shared screen</p>
+        <button type="button" class="jump-pill hidden" id="phone-jump"></button>
+      </div>
+    </div>
+
+    <div id="control-view" class="page">
+      <header class="top">
+        <div class="brand">
+          <div class="icon-box primary">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.9 2.1 4.2 12.4c-.4.7.2 1.6 1 1.6h5.1l-1.4 8 7.6-11.6c.5-.7-.1-1.7-1-1.7h-5l1.4-6.6c.1-.6-.4-1.1-1-1z"/></svg>
+          </div>
+          <div>
+            <h1>AI Interview HelpER</h1>
+            <p class="muted">Laptop control · answers stream to your phone and to a separate browser window</p>
+          </div>
+        </div>
+        <span class="badge muted">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v6c0 5 3.2 8.4 7 9.5 3.8-1.1 7-4.5 7-9.5V6l-7-3z"/><path d="m9 12 2 2 4-4"/></svg>
+          Nothing is answered on this page
+        </span>
+      </header>
+
+      <section id="start-panel" class="card start-card">
+        <div class="icon-box lg accent">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.9 4.9A10 10 0 0 1 12 2"/><path d="M19.1 4.9A10 10 0 0 1 22 12"/><path d="M19.1 19.1A10 10 0 0 1 12 22"/><path d="M4.9 19.1A10 10 0 0 1 2 12"/><circle cx="12" cy="12" r="2"/><path d="M12 8a4 4 0 0 1 4 4"/><path d="M16.2 7.8A7 7 0 0 1 19 12"/></svg>
+        </div>
+        <h2>Start a live session</h2>
+        <p class="muted start-copy">You'll get a pairing code and a phone-style answer panel. Type a question and a persona answer streams in — one card per question, never replaced.</p>
+        <button type="button" class="btn lg" id="start-btn">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+          Start session
+        </button>
+        <ol class="steps">
+          <li>
+            <span>1</span>
+            Pair your phone, or open the browser answer window
+          </li>
+          <li>
+            <span>2</span>
+            Share the window to watch — typed or spoken questions
+          </li>
+          <li>
+            <span>3</span>
+            Read each answer at your pace, one card per question
+          </li>
+        </ol>
+      </section>
+
+      <section id="session-panel" class="session hidden">
+        <div class="col">
+          <div class="card">
+            <div class="card-head">
+              <div class="label">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
+                Window capture
+              </div>
+              <span class="badge" id="status-pill">Ready</span>
+            </div>
+            <div class="preview">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
+              <p>This public demo stays in the browser. Type a question below — the live app can also watch a window and listen to interview audio.</p>
+            </div>
+            <div class="row-btns">
+              <button type="button" class="btn accent" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+                Share screen
+              </button>
+              <button type="button" class="btn outline" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 12h10"/><circle cx="12" cy="12" r="3"/></svg>
+                Read question now
+              </button>
+              <span class="toggle off">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.9 4.9A10 10 0 0 1 12 2"/><circle cx="12" cy="12" r="2"/></svg>
+                Auto-read off
+              </span>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div class="label">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10v4"/><path d="M7 6v12"/><path d="M11 3v18"/><path d="M15 7v10"/><path d="M19 10v4"/></svg>
+                Listen &amp; transcribe
+              </div>
+              <span class="badge muted">Off</span>
+            </div>
+            <div class="row-btns">
+              <div class="seg">
+                <span>Tab / system</span>
+                <span class="on">Microphone</span>
+              </div>
+              <button type="button" class="btn accent" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10v4"/><path d="M7 6v12"/><path d="M11 3v18"/></svg>
+                Start listening
+              </button>
+              <span class="toggle on">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.9 4.9A10 10 0 0 1 12 2"/><circle cx="12" cy="12" r="2"/></svg>
+                Auto-answer on
+              </span>
+            </div>
+            <p class="hint">Uses your microphone — best if the interviewer plays aloud on speakers.</p>
+            <p class="tiny-label">Live transcript</p>
+            <div class="transcript">Transcript of the interviewer's speech appears here (stays on this device — only the answer goes to the answer views).</div>
+          </div>
+
+          <form class="card" id="ask-form">
+            <label for="question">Question to answer</label>
+            <textarea id="question" rows="4" placeholder="Type or paste the interview question — e.g. “Tell me about a time you shipped an LLM feature in production.”"></textarea>
+            <div class="ask-row">
+              <p class="hint">⌘/Ctrl + Enter to send</p>
+              <button type="submit" class="btn" id="ask-btn" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 2 11 13"/><path d="M22 2 15 22 11 13 2 9 22 2z"/></svg>
+                Generate answer
+              </button>
+            </div>
+            <div id="last-q" class="last-q hidden">
+              <p class="tiny-label">Last question sent</p>
+              <p id="last-q-text"></p>
+            </div>
+          </form>
+
+          <div class="card hidden" id="recent-card">
+            <p class="section-title">Recent questions</p>
+            <ul id="recent-list"></ul>
+          </div>
+        </div>
+
+        <div class="col">
+          <div class="card pair">
+            <div class="label">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>
+              Open on your phone
+            </div>
+            <div class="qr-wrap">
+              <canvas id="qr" width="190" height="190"></canvas>
+            </div>
+            <p class="tiny-label">Pairing code</p>
+            <p class="code" id="pair-code"></p>
+            <div class="link-box">
+              <span id="phone-url"></span>
+              <button type="button" class="icon-btn" id="copy-btn" title="Copy link">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              </button>
+            </div>
+            <p class="presence" id="presence">Waiting for your phone…</p>
+          </div>
+
+          <div class="card">
+            <div class="label">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><polygon points="10 8 16 11 10 14 10 8"/></svg>
+              Answers in this browser
+            </div>
+            <p class="muted sm">Open the answer window on a second monitor or any window you are <strong>not</strong> sharing. It shows the same live feed as the phone.</p>
+            <div class="row-btns">
+              <button type="button" class="btn accent" id="open-phone">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>
+                Open answer window
+              </button>
+              <button type="button" class="btn outline" id="toggle-inline">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                Show on this page
+              </button>
+            </div>
+            <p class="warn hidden" id="share-warn">Answers are visible on this page now — don't share this screen while it's on.</p>
+            <p class="hint" id="safe-note">This page stays answer-free, so it is safe to screen-share.</p>
+            <div id="inline-feed" class="inline-feed hidden">
+              <div class="feed-bar embedded">
+                <div>
+                  <p class="feed-title">Answers (this browser)</p>
+                  <p class="feed-code" id="inline-code"></p>
+                </div>
+                <div class="feed-bar-right">
+                  <button type="button" class="hold-btn" id="inline-hold"></button>
+                  <span class="badge success"><span class="pulse-dot"></span>Live</span>
+                </div>
+              </div>
+              <div class="feed-body scroll-slim" id="inline-cards"></div>
+              <button type="button" class="jump-pill abs hidden" id="inline-jump"></button>
+            </div>
+          </div>
+
+          <div class="card note">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v6c0 5 3.2 8.4 7 9.5 3.8-1.1 7-4.5 7-9.5V6l-7-3z"/><path d="m9 12 2 2 4-4"/></svg>
+            <div>
+              <p class="section-title">Answers wait for you</p>
+              <p class="muted sm">Every question gets its own card. A new question is added below the one you're reading — it never replaces it — and scrolling up pauses auto-follow until you tap <strong>Jump to latest</strong>.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script src="/ai-interview-helper/app.js"></script>
+</body>
+</html>
