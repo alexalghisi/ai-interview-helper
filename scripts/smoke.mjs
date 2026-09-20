@@ -113,8 +113,15 @@ async function main() {
 
   const created = await fetch(`${BASE}/api/session`, { method: "POST" });
   check(created.ok, "POST /api/session creates a session");
-  const { code } = await created.json();
+  const createdBody = await created.json();
+  const { code, phoneOrigin } = createdBody;
   check(typeof code === "string" && code.length === 5, `pairing code (${code})`);
+  check(
+    typeof phoneOrigin === "string" &&
+      !/localhost|127\.0\.0\.1/.test(phoneOrigin),
+    "phone origin is reachable from another device",
+    phoneOrigin,
+  );
 
   const phone = await openStream(code, "phone");
   const viewer = await openStream(code, "viewer");
