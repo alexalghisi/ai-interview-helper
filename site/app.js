@@ -835,25 +835,31 @@
     const tokens = text.match(/\S+\s*/g) || [text];
     let i = 0;
 
-    function tick() {
-      const row = state.entries.find((e) => e.id === id);
-      if (!row) return;
-      if (i >= tokens.length) {
-        row.done = true;
-        state.status = "done";
-        persist();
-        setStatusPill();
-        if (state.inlineOpen) renderFeed("inline");
-        if (isPhone) renderFeed("phone");
-        return;
-      }
-      row.answer += tokens[i];
-      i += 1;
+    function paint() {
       persist();
       setStatusPill();
       if (state.inlineOpen) renderFeed("inline");
       if (isPhone) renderFeed("phone");
-      window.setTimeout(tick, 16);
+    }
+
+    const pulse = window.setInterval(paint, 80);
+
+    function tick() {
+      const row = state.entries.find((e) => e.id === id);
+      if (!row) {
+        window.clearInterval(pulse);
+        return;
+      }
+      if (i >= tokens.length) {
+        row.done = true;
+        state.status = "done";
+        window.clearInterval(pulse);
+        paint();
+        return;
+      }
+      row.answer += tokens[i];
+      i += 1;
+      window.setTimeout(tick, 24);
     }
     window.setTimeout(tick, 40);
   }
