@@ -7,7 +7,7 @@ in a specific persona and **streamed live to your phone and to a separate
 browser window** — never onto the screen you share. An interviewer watching your
 screen-share never sees the help.
 
-**Live demo:** https://alexalghisi.github.io/ai-interview-helper/
+**Static demo (GitHub Pages — not the live Next.js app):** https://alexalghisi.github.io/ai-interview-helper/
 
 > Window capture + phone pairing (QR + code); manual, vision, and **live-audio**
 > question capture; auto-answer on detected spoken questions; an append-only
@@ -204,7 +204,7 @@ answer promptly without hammering the server.
 | `ANSWER_MAX_TOKENS` | Max answer tokens (latency cap) | `512` |
 | `APP_ACCESS_PASSWORD` | Shared login password (gates the whole app) | none → open |
 | `AUTH_SECRET` | Secret used to sign the session cookie | derived from password |
-| `PHONE_PUBLIC_ORIGIN` | Public https origin for the phone QR (**Public** link) | unset locally → LAN / request host; `fly.toml` sets `https://ai-interview-helper.fly.dev` |
+| `PHONE_PUBLIC_ORIGIN` | Public https origin for the phone QR (**Public** link) | unset locally → LAN / request host; on Render, set the `https://*.onrender.com` URL after first deploy (or `RENDER_EXTERNAL_URL` / request host) |
 
 ## Hosted public URL
 
@@ -212,43 +212,87 @@ Local use is `npm run dev` on port **47317**. Leave `GEMINI_API_KEY` empty and
 the mock generator still streams answers, so the laptop + phone flow works
 without a provider key.
 
-A public https URL is a separate step: deploy **one** always-on Fly machine
-after `fly apps create` and `fly secrets set`. Sessions and the desktop→phone
-relay live in one Node process (in-memory + SSE), so do not run a second
-machine or scale-to-zero.
+**GitHub Pages** (`https://alexalghisi.github.io/ai-interview-helper/`) is a
+static demo only. It is not the live Next.js server — no in-memory sessions,
+no SSE, no phone pairing against a real origin.
 
-```bash
-fly deploy --ha=false
-```
+The live app is **one Node process** (in-memory sessions + SSE). Host it on
+**Render** (free web service). Render's Hobby workspace has no monthly fee
+and the Free compute plan does **not** require a credit card; if you go over
+included bandwidth without a card on file, Render suspends the service
+instead of charging. Fly.io still has a `fly.toml` in this repo if you
+already have an account, but Fly asks for a card — use Render if you don't
+want one.
 
-`fly.toml` names the app `ai-interview-helper` and sets
-`PHONE_PUBLIC_ORIGIN=https://ai-interview-helper.fly.dev`. After a successful
-deploy, the phone QR uses that origin — not a laptop LAN address or a
-Fly-private `172.x`. If you use a different app name or domain, point
-`PHONE_PUBLIC_ORIGIN` at it (`fly.toml` `[env]`, or
-`fly secrets set PHONE_PUBLIC_ORIGIN=…`).
+Sessions and the desktop→phone relay live in one process, so do not run a
+second instance. After the first deploy, set `PHONE_PUBLIC_ORIGIN` to the
+public `https://*.onrender.com` hostname shown in the dashboard so the phone
+QR never prints a `172.x` / private LAN address. Until you set it, the app
+reuses `RENDER_EXTERNAL_URL` and the request host (both public https).
 
-- **Laptop:** open the public URL, click **Start session**.
+- **Laptop:** open the Render https URL, click **Start session**.
 - **Phone:** scan the QR, or `/s/CODE` on that same origin.
 - If `APP_ACCESS_PASSWORD` is set, the phone hits `/login` once, then `/s/CODE`.
 
-That hostname is live only after a successful deploy with Fly auth. This repo
-does not assume it is already reachable.
+This environment has no Render token, so no public URL is claimed live here.
+Deploy from your own Render account (steps below).
 
-## Deploy to Fly.io (single always-on instance)
+## Deploy to Render (free, no credit card)
+
+`render.yaml` is a Render Blueprint: one web service, **Free** plan, native
+**Node** runtime, `numInstances: 1`. It does **not** use the Dockerfile —
+Render's Docker runtime is a paid path. The existing `Dockerfile` stays for
+Fly / other container hosts.
+
+The start command is `npm start`, which binds `0.0.0.0` and honors `$PORT`
+(Render injects it; locally it still defaults to **47317**).
+
+### One-time setup
+
+1. Sign up at [render.com](https://render.com) with GitHub (Hobby / Free —
+   skip adding a payment method).
+2. **New → Blueprint**, pick this repo. Render reads `render.yaml`.
+   Or **New → Web Service → Node → Free**, then use the same build/start
+   commands and env vars as the Blueprint.
+3. When prompted, set dashboard secrets (never commit these):
+   - `GEMINI_API_KEY` (and optionally `GOOGLE_GENERATIVE_AI_API_KEY`) — leave
+     empty to keep the mock generator
+   - `APP_ACCESS_PASSWORD` — recommended once the app is on the public
+     internet
+   - `AUTH_SECRET` — Blueprint generates one; or `openssl rand -hex 32`
+   - `PHONE_PUBLIC_ORIGIN` — paste `https://<your-service>.onrender.com`
+     after you see the URL (first deploy can skip this; set it next)
+4. Wait for the first deploy. Open the `onrender.com` URL.
+
+### Honest limits of Render's free instance
+
+- **Sleeps after ~15 minutes with no inbound traffic.** The next request
+  waits about a minute for spin-up. SSE connections drop, and in-memory
+  sessions reset on wake. The `.data/sessions.json` mirror is on an
+  ephemeral disk, so it does not survive sleep either.
+- Keep the laptop tab open during an interview so traffic keeps the
+  instance awake. Between interviews, expect a cold start and a new
+  pairing code.
+- One instance only. Do not scale out — that would split the in-memory
+  relay.
+- 750 free instance hours / month (idle time does not count). Render may
+  restart a free instance at any time.
+
+## Deploy to Fly.io (optional — requires a credit card)
 
 This app keeps sessions **in memory** and relays desktop→phone over **SSE in one
 process**, so it must run as **exactly one persistent machine** — no
 serverless, no scale-to-zero, no horizontal autoscaling. The included
 `fly.toml` enforces that (`min_machines_running = 1`, `auto_stop_machines =
-false`, `auto_start_machines = false`).
+false`, `auto_start_machines = false`) if you already use Fly.
 
 Files: `Dockerfile` (multi-stage, Next.js **standalone** output → small image),
 `.dockerignore`, `fly.toml` (internal port `47317`, `force_https`,
 `PHONE_PUBLIC_ORIGIN`). The container listens on `0.0.0.0:$PORT`.
 
 `--ha=false` is required: Fly's default is two machines, which would split the
-in-memory session / SSE relay.
+in-memory session / SSE relay. Fly's signup asks for a credit card; prefer
+Render above if you want a free host without one.
 
 ### Deploy (after secrets)
 
@@ -336,9 +380,10 @@ scripts/
 ## Deploy files
 
 ```
+render.yaml       Render Blueprint: one Free Node web service (no credit card)
 Dockerfile        Multi-stage build → Next.js standalone runner (node server.js)
 .dockerignore     Keeps the build context (and secrets) out of the image
-fly.toml          One always-on machine, port 47317, HTTPS, PHONE_PUBLIC_ORIGIN
+fly.toml          Optional Fly machine (card required); left in place, unused by Render
 next.config.ts    output: "standalone"
 ```
 
