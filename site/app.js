@@ -1,4 +1,55 @@
+var AIHShare = {
+  canUseDisplayMedia: function (nav, secure) {
+    if (secure === false) return false;
+    return !!(
+      nav &&
+      nav.mediaDevices &&
+      typeof nav.mediaDevices.getDisplayMedia === "function"
+    );
+  },
+  displayMediaUnavailableReason: function (nav, secure) {
+    if (secure === false) {
+      return "Screen capture needs a secure page (HTTPS or localhost). Open this demo over HTTPS.";
+    }
+    if (!AIHShare.canUseDisplayMedia(nav, true)) {
+      return "Screen capture isn't supported in this browser. Use Chrome or Edge on desktop, or type the question below.";
+    }
+    return "";
+  },
+  shareConstraints: { video: true, audio: false },
+  startShareClick: function (deps) {
+    var nav = deps.navigator;
+    var showError = deps.showError;
+    var reason = AIHShare.displayMediaUnavailableReason(nav, deps.secure);
+    if (reason) {
+      if (showError) showError(reason);
+      return Promise.resolve({ ok: false, error: reason });
+    }
+    if (showError) showError("");
+    return nav.mediaDevices
+      .getDisplayMedia(deps.constraints || AIHShare.shareConstraints)
+      .then(function (stream) {
+        return { ok: true, stream: stream };
+      })
+      .catch(function (err) {
+        var name = err && err.name;
+        var error =
+          name === "NotAllowedError"
+            ? "Screen capture was denied or cancelled. Click Share screen, pick a window, and allow access."
+            : "Couldn't start screen capture. You can still type questions below.";
+        if (showError) showError(error);
+        return { ok: false, error: error };
+      });
+  },
+};
+
+if (typeof globalThis !== "undefined") {
+  globalThis.AIHShare = AIHShare;
+}
+
 (function () {
+  if (typeof document === "undefined") return;
+
   const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   const STORE = "aih-demo";
   const PRESENCE = "aih-demo-presence";
@@ -18,6 +69,7 @@
     follow: { phone: true, inline: true },
     unread: { phone: 0, inline: 0 },
     hold: { phone: false, inline: false },
+    shareStream: null,
   };
 
   function hash(str) {
@@ -744,6 +796,56 @@
     }
   }
 
+  function showShareError(msg) {
+    const node = el("share-error");
+    if (!node) return;
+    if (msg) {
+      node.textContent = msg;
+      node.classList.remove("hidden");
+    } else {
+      node.textContent = "";
+      node.classList.add("hidden");
+    }
+  }
+
+  function stopShare() {
+    if (state.shareStream) {
+      state.shareStream.getTracks().forEach(function (t) {
+        t.stop();
+      });
+      state.shareStream = null;
+    }
+    const video = el("share-video");
+    if (video) {
+      video.srcObject = null;
+      video.classList.add("hidden");
+    }
+    const idle = el("share-idle");
+    if (idle) idle.classList.remove("hidden");
+  }
+
+  function applyShareStream(stream) {
+    if (state.shareStream && state.shareStream !== stream) {
+      state.shareStream.getTracks().forEach(function (t) {
+        t.stop();
+      });
+    }
+    state.shareStream = stream;
+    const video = el("share-video");
+    const idle = el("share-idle");
+    if (video) {
+      video.srcObject = stream;
+      video.muted = true;
+      video.classList.remove("hidden");
+      video.play().catch(function () {});
+    }
+    if (idle) idle.classList.add("hidden");
+    const track = stream.getVideoTracks()[0];
+    if (track) {
+      track.addEventListener("ended", stopShare);
+    }
+  }
+
   function startSession() {
     load();
     if (!state.code) {
@@ -753,6 +855,11 @@
       persist();
     }
     renderControl();
+    const blocked = AIHShare.displayMediaUnavailableReason(
+      navigator,
+      window.isSecureContext !== false,
+    );
+    if (blocked) showShareError(blocked);
   }
 
   function bindHold(kind, btn, jump) {
@@ -942,6 +1049,16 @@
   });
 
   el("start-btn").addEventListener("click", startSession);
+
+  el("share-btn").addEventListener("click", function () {
+    AIHShare.startShareClick({
+      navigator: navigator,
+      secure: window.isSecureContext !== false,
+      showError: showShareError,
+    }).then(function (result) {
+      if (result.ok) applyShareStream(result.stream);
+    });
+  });
 
   el("copy-btn").addEventListener("click", function () {
     const url = el("phone-url").textContent;
