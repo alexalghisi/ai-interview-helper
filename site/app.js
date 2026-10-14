@@ -998,7 +998,8 @@
       try {
         listen.rec.onend = null;
         listen.rec.stop();
-      } catch (_) {}
+      } catch {
+      }
       listen.rec = null;
     }
   }
@@ -1050,7 +1051,8 @@
       if (listen.on && listen.rec === rec) {
         try {
           rec.start();
-        } catch (_) {}
+        } catch {
+        }
       }
     };
     rec.start();
@@ -1071,7 +1073,7 @@
     }
     try {
       startSpeech(SR);
-    } catch (_) {
+    } catch {
       startScriptedTurns();
     }
   }

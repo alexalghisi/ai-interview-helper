@@ -1,11 +1,8 @@
-"use strict";
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+import classify from "./classify-utterance.js";
 
-const { describe, it } = require("node:test");
-const assert = require("node:assert/strict");
-const {
-    classifyUtterance,
-    isSameQuestion,
-} = require("./classify-utterance.js");
+const { classifyUtterance, isSameQuestion } = classify;
 
 describe("classifyUtterance", function () {
     it("generates an answer for an interviewer question", function () {
