@@ -112,25 +112,29 @@
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10v4"/><path d="M7 6v12"/><path d="M11 3v18"/><path d="M15 7v10"/><path d="M19 10v4"/></svg>
                 Listen &amp; transcribe
               </div>
-              <span class="badge muted">Off</span>
+              <span class="badge muted" id="listen-badge">Off</span>
             </div>
             <div class="row-btns">
               <div class="seg">
                 <span>Tab / system</span>
                 <span class="on">Microphone</span>
               </div>
-              <button type="button" class="btn accent" disabled>
+              <button type="button" class="btn accent" id="listen-btn">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10v4"/><path d="M7 6v12"/><path d="M11 3v18"/></svg>
                 Start listening
               </button>
-              <span class="toggle on">
+              <button type="button" class="toggle on" id="auto-answer-btn">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.9 4.9A10 10 0 0 1 12 2"/><circle cx="12" cy="12" r="2"/></svg>
                 Auto-answer on
-              </span>
+              </button>
             </div>
-            <p class="hint">Uses your microphone — best if the interviewer plays aloud on speakers.</p>
+            <p class="hint">Uses your microphone — best if the interviewer plays aloud on speakers. Auto-answer only fires on interviewer questions.</p>
             <p class="tiny-label">Live transcript</p>
-            <div class="transcript">Transcript of the interviewer's speech appears here (stays on this device — only the answer goes to the answer views).</div>
+            <div class="transcript" id="transcript">Transcript of the interviewer's speech appears here (stays on this device — only the answer goes to the answer views).</div>
+            <div id="coach-hint" class="coach-hint hidden">
+              <p class="tiny-label">While you speak</p>
+              <p id="coach-hint-text"></p>
+            </div>
           </div>
 
           <form class="card" id="ask-form">
@@ -220,6 +224,7 @@
       </section>
     </div>
   </div>
+  <script src="classify-utterance.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
