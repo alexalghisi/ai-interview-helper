@@ -72,6 +72,31 @@ if (typeof globalThis !== "undefined") {
     shareStream: null,
   };
 
+  const listen = {
+    on: false,
+    autoAnswer: true,
+    answering: false,
+    lastRole: "",
+    lastQuestion: "",
+    lastQuestionAt: 0,
+    hint: "",
+    transcript: "",
+    rec: null,
+    demoTimer: 0,
+    demoIndex: 0,
+  };
+
+  const DEMO_TURNS = [
+    "So to start, can you tell me about yourself and your background?",
+    "Sure. I spent the last three years shipping LLM systems in production.",
+    "Tell me about a time you shipped an LLM feature in production.",
+    "At Complaion I owned the RAG pipeline and I gated releases with evals.",
+    "Why do you want to work here specifically?",
+    "I want to keep building products real users depend on and mentor as we grow.",
+  ];
+
+  const classifyApi = typeof AIHClassify !== "undefined" ? AIHClassify : null;
+
   function hash(str) {
     let h = 0;
     for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0;
@@ -775,6 +800,7 @@ if (typeof globalThis !== "undefined") {
       el("last-q-text").textContent = state.lastQuestion;
     }
     renderRecent();
+    renderListen();
     if (state.inlineOpen) renderFeed("inline");
   }
 
@@ -971,6 +997,206 @@ if (typeof globalThis !== "undefined") {
     window.setTimeout(tick, 40);
   }
 
+  function classifyHeard(text) {
+    if (!classifyApi || !classifyApi.classifyUtterance) {
+      return { role: "other", kind: "statement", generateAnswer: false, hint: null };
+    }
+    return classifyApi.classifyUtterance(text, {
+      answering: listen.answering,
+      lastRole: listen.lastRole,
+      lastQuestion: listen.lastQuestion,
+    });
+  }
+
+  function sameQuestion(a, b) {
+    if (!a || !b) return false;
+    if (classifyApi && classifyApi.isSameQuestion) return classifyApi.isSameQuestion(a, b);
+    return a.trim().toLowerCase() === b.trim().toLowerCase();
+  }
+
+  function renderListen() {
+    const badge = el("listen-badge");
+    const btn = el("listen-btn");
+    const autoBtn = el("auto-answer-btn");
+    const box = el("transcript");
+    const hint = el("coach-hint");
+    const hintText = el("coach-hint-text");
+    if (badge) {
+      badge.textContent = "";
+      badge.className = "badge " + (listen.on ? "accent" : "muted");
+      if (listen.on) {
+        const dot = document.createElement("span");
+        dot.className = "pulse-dot";
+        badge.appendChild(dot);
+        badge.appendChild(document.createTextNode("Listening"));
+      } else {
+        badge.appendChild(document.createTextNode("Off"));
+      }
+    }
+    if (btn) {
+      btn.className = listen.on ? "btn outline" : "btn accent";
+      btn.innerHTML = listen.on
+        ? '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12"/></svg>Stop listening'
+        : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10v4"/><path d="M7 6v12"/><path d="M11 3v18"/></svg>Start listening';
+    }
+    if (autoBtn) {
+      autoBtn.className = "toggle " + (listen.autoAnswer ? "on" : "off");
+      autoBtn.innerHTML =
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.9 4.9A10 10 0 0 1 12 2"/><circle cx="12" cy="12" r="2"/></svg>' +
+        (listen.autoAnswer ? "Auto-answer on" : "Auto-answer off");
+    }
+    if (box) {
+      if (listen.transcript) box.textContent = listen.transcript;
+      else if (listen.on) box.textContent = "Listening for speech…";
+      else {
+        box.textContent =
+          "Transcript of the interviewer's speech appears here (stays on this device — only the answer goes to the answer views).";
+      }
+      box.scrollTop = box.scrollHeight;
+    }
+    if (hint && hintText) {
+      const show = Boolean(listen.hint) && !isPhone;
+      hint.classList.toggle("hidden", !show);
+      hintText.textContent = listen.hint || "";
+    }
+  }
+
+  function hearUtterance(raw) {
+    const text = String(raw || "").replace(/\s+/g, " ").trim();
+    if (!text) return;
+    listen.transcript = (listen.transcript ? listen.transcript + " " : "") + text;
+    listen.transcript = listen.transcript.slice(-4000);
+    const cls = classifyHeard(text);
+    if (cls.role === "candidate") {
+      listen.lastRole = "candidate";
+      listen.answering = true;
+      listen.hint = cls.hint || "";
+      renderListen();
+      return;
+    }
+    listen.hint = "";
+    listen.lastRole = cls.role || "interviewer";
+    if (!cls.generateAnswer) {
+      renderListen();
+      return;
+    }
+    const recent = Date.now() - listen.lastQuestionAt < 25000;
+    if (recent && sameQuestion(text, listen.lastQuestion)) {
+      renderListen();
+      return;
+    }
+    listen.lastQuestion = text;
+    listen.lastQuestionAt = Date.now();
+    listen.answering = true;
+    const box = el("question");
+    const ask = el("ask-btn");
+    if (box) {
+      box.value = text;
+      if (ask) ask.disabled = !text;
+    }
+    if (listen.autoAnswer) streamAnswer(text);
+    renderListen();
+  }
+
+  if (!isPhone) window.AIHHear = hearUtterance;
+
+  function stopSpeechOnly() {
+    if (listen.rec) {
+      try {
+        listen.rec.onend = null;
+        listen.rec.stop();
+      } catch {
+      }
+      listen.rec = null;
+    }
+  }
+
+  function stopDemoTurns() {
+    if (listen.demoTimer) {
+      window.clearTimeout(listen.demoTimer);
+      listen.demoTimer = 0;
+    }
+    listen.demoIndex = 0;
+  }
+
+  function startScriptedTurns() {
+    stopDemoTurns();
+    function next() {
+      if (!listen.on) return;
+      if (listen.demoIndex >= DEMO_TURNS.length) return;
+      hearUtterance(DEMO_TURNS[listen.demoIndex]);
+      listen.demoIndex += 1;
+      if (listen.demoIndex < DEMO_TURNS.length) {
+        listen.demoTimer = window.setTimeout(next, 1600);
+      }
+    }
+    listen.demoTimer = window.setTimeout(next, 400);
+  }
+
+  function startSpeech(SR) {
+    const rec = new SR();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = "en-US";
+    rec.onresult = function (ev) {
+      let finalText = "";
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        const piece = ev.results[i][0] && ev.results[i][0].transcript;
+        if (!piece) continue;
+        if (ev.results[i].isFinal) finalText += piece;
+      }
+      if (finalText.trim()) hearUtterance(finalText);
+    };
+    rec.onerror = function (ev) {
+      const err = ev && ev.error;
+      if (err === "not-allowed" || err === "service-not-allowed" || err === "audio-capture") {
+        stopSpeechOnly();
+        startScriptedTurns();
+      }
+    };
+    rec.onend = function () {
+      if (listen.on && listen.rec === rec) {
+        try {
+          rec.start();
+        } catch {
+        }
+      }
+    };
+    rec.start();
+    listen.rec = rec;
+  }
+
+  function startListening() {
+    if (listen.on) return;
+    listen.on = true;
+    listen.answering = false;
+    listen.lastRole = "";
+    listen.hint = "";
+    renderListen();
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      startScriptedTurns();
+      return;
+    }
+    try {
+      startSpeech(SR);
+    } catch {
+      startScriptedTurns();
+    }
+  }
+
+  function stopListening() {
+    listen.on = false;
+    stopSpeechOnly();
+    stopDemoTurns();
+    renderListen();
+  }
+
+  function toggleListening() {
+    if (listen.on) stopListening();
+    else startListening();
+  }
+
   function beatPresence() {
     try {
       localStorage.setItem(PRESENCE, String(Date.now()));
@@ -1049,6 +1275,11 @@ if (typeof globalThis !== "undefined") {
   });
 
   el("start-btn").addEventListener("click", startSession);
+  el("listen-btn").addEventListener("click", toggleListening);
+  el("auto-answer-btn").addEventListener("click", function () {
+    listen.autoAnswer = !listen.autoAnswer;
+    renderListen();
+  });
 
   el("share-btn").addEventListener("click", function () {
     AIHShare.startShareClick({
