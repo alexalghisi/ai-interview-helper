@@ -11,6 +11,61 @@ function isLoopbackHost(hostname: string): boolean {
   );
 }
 
+function isHostedRuntime(): boolean {
+  return Boolean(
+    process.env.FLY_APP_NAME ||
+      process.env.FLY_MACHINE_ID ||
+      process.env.FLY_ALLOC_ID ||
+      process.env.RENDER ||
+      process.env.RENDER_SERVICE_ID,
+  );
+}
+
+function hostName(hostHeader: string): string {
+  if (hostHeader.startsWith("[")) {
+    const end = hostHeader.indexOf("]");
+    if (end !== -1) return hostHeader.slice(1, end);
+  }
+  const colonCount = (hostHeader.match(/:/g) ?? []).length;
+  if (colonCount === 1) {
+    return hostHeader.slice(0, hostHeader.lastIndexOf(":"));
+  }
+  return hostHeader.replace(/^\[|\]$/g, "");
+}
+
+function isHostedPrivateHost(hostname: string): boolean {
+  const host = hostname.replace(/^\[|\]$/g, "");
+  if (host.toLowerCase().startsWith("fdaa:")) return true;
+  return isHostedRuntime() && isPrivateIPv4(host);
+}
+
+function configuredPublicOrigin(): string | null {
+  const override = process.env.PHONE_PUBLIC_ORIGIN?.trim().replace(/\/$/, "");
+  if (override && isUsablePhoneOrigin(override)) return override;
+  const renderUrl = process.env.RENDER_EXTERNAL_URL?.trim().replace(/\/$/, "");
+  if (renderUrl && isUsablePhoneOrigin(renderUrl)) return renderUrl;
+  const app = process.env.FLY_APP_NAME?.trim();
+  if (app) {
+    const origin = `https://${app}.fly.dev`;
+    if (isUsablePhoneOrigin(origin)) return origin;
+  }
+  return null;
+}
+
+function requestOriginParts(req: Request) {
+  const url = new URL(req.url);
+  const hostHeader =
+    req.headers.get("x-forwarded-host") || req.headers.get("host") || url.host;
+  const hostname = hostName(hostHeader);
+  const forwarded = req.headers.get("x-forwarded-proto");
+  const proto = forwarded
+    ? forwarded.split(",")[0].trim()
+    : url.protocol.replace(":", "");
+  const port = hostPort(hostHeader, url.port || process.env.PORT || "47317");
+  const requestOrigin = `${proto}://${hostHeader}`.replace(/\/$/, "");
+  return { hostname, proto, port, requestOrigin, hostHeader };
+}
+
 /** True only when the current request is actually HTTPS (not just NODE_ENV). */
 export function requestIsHttps(req: Request): boolean {
   const forwarded = req.headers.get("x-forwarded-proto");
@@ -62,6 +117,7 @@ function isUsablePhoneOrigin(value: string): boolean {
     if (!u.protocol.startsWith("http")) return false;
     if (isLoopbackHost(u.hostname)) return false;
     if (u.hostname === "0.0.0.0") return false;
+    if (isHostedPrivateHost(u.hostname)) return false;
     return Boolean(u.hostname);
   } catch {
     return false;
@@ -90,50 +146,36 @@ export function getPhoneOriginOptions(req: Request): PhoneOriginOption[] {
     options.push({ label, value: clean, hint });
   };
 
-  const url = new URL(req.url);
-  const hostHeader =
-    req.headers.get("x-forwarded-host") || req.headers.get("host") || url.host;
-  const hostname = hostHeader.split(":")[0].replace(/^\[|\]$/g, "");
-  const forwarded = req.headers.get("x-forwarded-proto");
-  const proto = forwarded
-    ? forwarded.split(",")[0].trim()
-    : url.protocol.replace(":", "");
-  const port = hostPort(hostHeader, url.port || process.env.PORT || "47317");
+  const { hostname, proto, port, hostHeader } = requestOriginParts(req);
 
   add(
     "Public",
-    process.env.PHONE_PUBLIC_ORIGIN?.trim() ?? null,
-    "PHONE_PUBLIC_ORIGIN — works anywhere while the tunnel is up",
+    configuredPublicOrigin(),
+    "PHONE_PUBLIC_ORIGIN — public https origin (hosted / tunnel)",
   );
   if (!isLoopbackHost(hostname)) {
     add("This host", `${proto}://${hostHeader}`, "The address you opened");
   }
   const lan = firstPrivateIPv4();
-  if (lan) {
+  if (lan && isLoopbackHost(hostname) && !isHostedRuntime()) {
     add("Wi-Fi", `http://${lan}:${port}`, "Same Wi-Fi network as this laptop");
   }
   return options;
 }
 
 export function getPhoneOrigin(req: Request): string {
-  const url = new URL(req.url);
-  const hostHeader =
-    req.headers.get("x-forwarded-host") || req.headers.get("host") || url.host;
-  const hostname = hostHeader.split(":")[0].replace(/^\[|\]$/g, "");
-  const forwarded = req.headers.get("x-forwarded-proto");
-  const proto = forwarded
-    ? forwarded.split(",")[0].trim()
-    : url.protocol.replace(":", "");
-  const override = process.env.PHONE_PUBLIC_ORIGIN?.trim().replace(/\/$/, "");
-  if (override && isUsablePhoneOrigin(override)) return override;
-  const port = hostPort(hostHeader, url.port || process.env.PORT || "47317");
-  const lan = firstPrivateIPv4();
-  if (lan) {
-    const lanOrigin = `http://${lan}:${port}`;
-    if (isUsablePhoneOrigin(lanOrigin)) return lanOrigin;
+  const { hostname, port, requestOrigin } = requestOriginParts(req);
+  const published = configuredPublicOrigin();
+  if (published) return published;
+  if (!isLoopbackHost(hostname) && isUsablePhoneOrigin(requestOrigin)) {
+    return requestOrigin;
   }
-  if (!isLoopbackHost(hostname)) {
-    return `${proto}://${hostHeader}`;
+  if (isLoopbackHost(hostname) && !isHostedRuntime()) {
+    const lan = firstPrivateIPv4();
+    if (lan) {
+      const lanOrigin = `http://${lan}:${port}`;
+      if (isUsablePhoneOrigin(lanOrigin)) return lanOrigin;
+    }
   }
-  return `${proto}://${hostHeader}`;
+  return requestOrigin;
 }
