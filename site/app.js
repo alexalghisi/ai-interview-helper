@@ -215,7 +215,7 @@ if (typeof globalThis !== "undefined") {
     };
     try {
       localStorage.setItem(STORE, JSON.stringify(payload));
-    } catch (_) {
+    } catch {
     }
     if (bus) bus.postMessage({ type: "state", payload });
   }
@@ -230,7 +230,7 @@ if (typeof globalThis !== "undefined") {
       state.status = data.status || "idle";
       state.entries = Array.isArray(data.entries) ? data.entries : [];
       state.lastQuestion = data.lastQuestion || "";
-    } catch (_) {
+    } catch {
     }
   }
 
@@ -1200,7 +1200,7 @@ if (typeof globalThis !== "undefined") {
   function beatPresence() {
     try {
       localStorage.setItem(PRESENCE, String(Date.now()));
-    } catch (_) {
+    } catch {
     }
   }
 
@@ -1210,7 +1210,7 @@ if (typeof globalThis !== "undefined") {
     let t = 0;
     try {
       t = Number(localStorage.getItem(PRESENCE) || 0);
-    } catch (_) {
+    } catch {
       t = 0;
     }
     const live = t > 0 && Date.now() - t < 4000;
@@ -1227,7 +1227,7 @@ if (typeof globalThis !== "undefined") {
     if (ev.key === STORE && ev.newValue) {
       try {
         applyRemote(JSON.parse(ev.newValue));
-      } catch (_) {}
+      } catch {}
     }
   });
 
