@@ -13,6 +13,8 @@ Laptop control pairs a phone with a QR and 5-character code. Answers stream onto
 
 **Live demo:** https://alexalghisi.github.io/ai-interview-helper/
 
+![Laptop control and phone answer feed: start a session, pair the phone, type a question, and the answer streams only on the phone.](docs/pages-preview.gif)
+
 > Window capture + phone pairing (QR + code); manual, vision, and **live-audio**
 > question capture; auto-answer on detected spoken questions; an append-only
 > answer feed you read at your own pace.
