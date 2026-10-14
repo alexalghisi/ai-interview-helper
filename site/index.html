@@ -87,11 +87,15 @@
               <span class="badge" id="status-pill">Ready</span>
             </div>
             <div class="preview">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
-              <p>This public demo stays in the browser. Type a question below — the live app can also watch a window and listen to interview audio.</p>
+              <video id="share-video" class="share-video hidden" autoplay muted playsinline></video>
+              <div class="preview-idle" id="share-idle">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
+                <p>This public demo stays in the browser. Type a question below — the live app can also watch a window and listen to interview audio.</p>
+              </div>
             </div>
+            <p class="warn hidden" id="share-error" role="status"></p>
             <div class="row-btns">
-              <button type="button" class="btn accent" disabled>
+              <button type="button" class="btn accent" id="share-btn">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"/></svg>
                 Share screen
               </button>
